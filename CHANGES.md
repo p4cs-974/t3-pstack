@@ -2,6 +2,12 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-T3 rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 2.5.1 - T3 lists pstack skills in Antigravity threads
+
+The installer now shares one pstack copy across Antigravity profiles and links its skills into `~/.gemini/config/skills`, where T3 looks for them. It migrates older profile copies and preserves user-owned files. `doctor` reports broken links and skill name conflicts. The shared skills stay visible when a profile disables the plugin.
+
+Run `npx -y github:p4cs-974/t3-pstack#v2.5.1 update` to update an installation from this fork.
+
 ## 2.5.0 - Antigravity threads load t3-pstack, and a fork's installer installs from that fork
 
 T3 threads on the Antigravity provider now load t3-pstack: its skills, its four agents, and the session-start hook that routes work to `poteto-mode`.
