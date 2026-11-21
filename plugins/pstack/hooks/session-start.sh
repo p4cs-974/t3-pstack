@@ -20,8 +20,15 @@ case "${1:-}" in
     reader="${PLUGIN_ROOT}/skills/setup-pstack/scripts/read-sheet.sh"
     context="${PLUGIN_ROOT}/hooks/session-start-context.md"
     ;;
+  kiro)
+    # Kiro names no plugin root, so the installer's hooks file passes it. No
+    # released version read a sheet in a Kiro home.
+    home_sheet=
+    reader="$2/skills/setup-pstack/scripts/read-sheet.sh"
+    context="$2/hooks/session-start-context.md"
+    ;;
   *)
-    echo "session-start.sh: unknown runtime '${1:-}' (expected claude, codex, or antigravity)" >&2
+    echo "session-start.sh: unknown runtime '${1:-}' (expected claude, codex, antigravity, or kiro)" >&2
     exit 2
     ;;
 esac
@@ -51,4 +58,11 @@ if [ "$1" = antigravity ]; then
   fi
 elif ! $off; then
   cat "$context"
+  # Kiro loads each skill through a link with no plugin namespace.
+  if [ "$1" = kiro ]; then
+    printf '\n%s%s%s\n' \
+      "On Kiro, t3-pstack's skills have bare names. \`t3-pstack:<name>\` is the \`<name>\` skill, and \`/t3-pstack:<name>\` is \`/<name>\`. \`<plugin root>\` is \`" \
+      "$2" \
+      "\`. Kiro reaches each skill through a link, so a skill's path does not lead there. T3's tools come from the \`t3-code\` MCP server, and Kiro can defer MCP tools. Load \`delegate_task\` and each other T3 tool with the tool-loading tool before its first call."
+  fi
 fi

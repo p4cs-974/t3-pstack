@@ -14,7 +14,7 @@ This skill orchestrates three others: an inline mining pass (see step 1), the ha
 
 ### 0. Check for an existing skill
 
-Look recursively for `*-mode/SKILL.md` in the project's and the user's skills directories (`.claude/skills/` and `~/.claude/skills/` on Claude Code, `.agents/skills/` and `~/.agents/skills/` on Codex and most other harnesses) matching the user's handle. Mode skills can live in a personal category directory (`<skills dir>/<handle>/`), not only at the top level. If one exists, confirm intent with a multiple-choice question (`AskUserQuestion` on Claude Code, numbered options in plain text elsewhere) (unless they already said "update my skill" or similar):
+Look recursively for `*-mode/SKILL.md` in the project's and the user's skills directories (`.claude/skills/` and `~/.claude/skills/` on Claude Code, `.kiro/skills/` and `~/.kiro/skills/` on Kiro, `.agents/skills/` and `~/.agents/skills/` on Codex and most other harnesses) matching the user's handle. Mode skills can live in a personal category directory (`<skills dir>/<handle>/`), not only at the top level. If one exists, confirm intent with a multiple-choice question (`AskUserQuestion` on Claude Code, numbered options in plain text elsewhere) (unless they already said "update my skill" or similar):
 
 - Update the existing skill (default for repeat runs)
 - Start fresh (rare, ask why before doing it)
@@ -66,7 +66,7 @@ The **poteto-mode** skill shows the shape. Read it for granularity. Don't copy i
 
 Use the harness's skill-authoring skill (`skill-creator` where installed) to author the skill. Placement:
 
-- Path: preserve an existing mode skill's category. For a new mode, use `<skills dir>/<handle>/<handle>-mode/SKILL.md` when the repo has an established personal category for that handle. Otherwise default to `<skills dir>/<handle>-mode/SKILL.md` in the project, or in the user's skills directory if the user prefers a personal skill. `<skills dir>` is `.claude/skills` on Claude Code and `.agents/skills` elsewhere.
+- Path: preserve an existing mode skill's category. For a new mode, use `<skills dir>/<handle>/<handle>-mode/SKILL.md` when the repo has an established personal category for that handle. Otherwise default to `<skills dir>/<handle>-mode/SKILL.md` in the project, or in the user's skills directory if the user prefers a personal skill. `<skills dir>` is `.claude/skills` on Claude Code, `.kiro/skills` on Kiro, and `.agents/skills` elsewhere.
 - Handle: the user's first name or chosen identifier.
 - Frontmatter `description`: trigger on their name + `/<handle>-mode` + "work in their style", not on generic keywords like "write code" or "review PR".
 - Frontmatter formatting: follow `skill-creator`'s YAML rules. Keep `description` as one YAML scalar. Quote it or use `description: >-` with indented continuation lines when punctuation or wrapping requires it.

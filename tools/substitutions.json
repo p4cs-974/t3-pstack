@@ -1,16 +1,22 @@
 {
   "substitutions": [
     {
+      "pattern": "Older defaults put another Gemini model, then `gemini-4-neon-high`, in the panel seat. So in any rule, a `gemini-4-neon-high` entry, or a `gemini-4-*` entry other than `gemini-4-neon-*`, in a panel role (`arena runners`, `arena cross-judge pool`, `interrogate reviewers`) is an old default. Each one becomes `gemini-4-neon-xhigh`. A Gemini 4 Neon entry at any other level is the user's choice and stays. Tell the user which entries you replaced.",
+      "files": "^skills/setup-pstack/SKILL\\.md$",
+      "replacement": "Older defaults put another Gemini model, then Gemini 4 Neon at a `high` reasoning level, in the panel seat. So in any sheet, a Gemini 4 Neon entry at `high`, or an entry whose model ID's last `/` part matches `gemini-4-*` other than Gemini 4 Neon, in a panel role (`arena runners`, `arena cross-judge pool`, `interrogate reviewers`) is an old default. Each one becomes Gemini 4 Neon at `xhigh` on the same provider instance, such as `antigravity/gemini-4-neon thought_level=xhigh`, if `orchestrator_capabilities` with `search: \"gemini-4-neon\"` lists it there. A Gemini 4 Neon entry at any other level is the user's choice and stays. Tell the user which entries you replaced.",
+      "rationale": "The sheet: upstream's move of old Gemini panel entries, Neon at high included, to Gemini 4 Neon at xhigh, in T3 entries. An entry keeps its provider instance, since Neon on another instance can bill differently, so it moves only where that instance lists Neon. OpenCode's short capabilities list omits Neon, so the check searches"
+    },
+    {
       "pattern": "A rule without the `# defaults: 3` line comes from an older setup. That setup wrote a line for every role, so some of its values are old defaults, not choices. Before step 3, replace these values:\n\n- An `arena cross-judge pool` list of exactly one `claude-fable-*` entry, one `claude-opus-*` entry, and one `gemini-*` entry, in any order, takes the role's step 5 list. Fable and Opus are one vendor, so the Fable entry could judge only where the Opus entry also could.\n- A `# budget: unlimited` line becomes `large`, because no role runs above `xhigh`.\n- If the rule has no `# defaults: 2` line either, an old slug is one that matches `grok-*`. An old slug in `feature, refactoring`, `bug-fix`, `perf-issue`, `hillclimb`, or `swarm workers` takes the role's step 5 default. In a panel role (`arena runners`, `arena cross-judge pool`, `interrogate reviewers`), a list of exactly one `claude-opus-*` entry and one old slug, in either order, takes the role's step 5 list. In any other list, each old slug becomes `claude-opus-5-5-high-fast`.\n\nEvery other value is the user's choice and stays, including an old slug in any other role and every `inherit-parent` or `auto` value.",
       "files": "^skills/setup-pstack/SKILL\\.md$",
       "replacement": "A sheet without the `# defaults: 3` line comes from an older setup. That setup wrote a line for every role, so some of its values are old defaults, not choices. Before step 3, replace these values:\n\n- An `arena cross-judge pool` list of exactly one Fable entry (`claude-fable-*`), one Opus entry (`claude-opus-*`), and one Gemini entry (`gemini-*`), with any provider instance and options, in any order, takes the role's step 5 list. Fable and Opus are one vendor, so the Fable entry could judge only where the Opus entry also could.\n- A `# budget: unlimited` line becomes `large`, because no role runs above `xhigh`.\n- If the sheet has no `# defaults: 2` line either, each of these values takes the role's step 5 default:\n  - `claudeAgent/claude-fable-5-1`, with any options, in `bug-fix`, `perf-issue`, or `hillclimb`.\n  - `claudeAgent/claude-opus-5-5`, with any options, in `swarm workers`.\n  - In a panel role (`arena runners`, `arena cross-judge pool`, `interrogate reviewers`), a list of exactly `claudeAgent/claude-opus-5-5`, `codex/gpt-6.1-sol`, and `grok/grok-4.7`, with any options, in any order.\n\nEvery other value is the user's choice and stays, including every `inherit-parent` or `auto` value.",
       "rationale": "The sheet: upstream's migration of old defaults in T3 entries. The `# defaults: 2` branch matches the defaults t3-pstack 2.0 through 2.2 wrote, since a T3 sheet never held a Cursor slug, so a Grok entry outside that three-entry panel stays"
     },
     {
-      "pattern": "So `medium` turns `claude-opus-5-5-xhigh-fast` into `claude-opus-5-5-high-fast` and `claude-opus-5-5-high-fast` into `claude-opus-5-5-medium-fast`, and `small` turns them into `claude-opus-5-5-medium-fast` and `claude-opus-5-5-low-fast`. Opus 5.5 always runs its `-fast` slug, so every Opus 5.5 value ends in `-fast`. Fable 5.2 and Gemini have no fast slug, so never write one. Gemini tops out at `high`, so a Gemini entry runs at `high` when its role's target is `xhigh`.",
+      "pattern": "So `medium` turns `claude-opus-5-5-xhigh-fast` into `claude-opus-5-5-high-fast` and `claude-opus-5-5-high-fast` into `claude-opus-5-5-medium-fast`, and `small` turns them into `claude-opus-5-5-medium-fast` and `claude-opus-5-5-low-fast`. Opus 5.5 always runs its `-fast` slug, so every Opus 5.5 value ends in `-fast`. Fable 5.2 and Gemini have no fast slug, so never write one. Gemini 4 Neon slugs run from `low` to `xhigh` with no `max` or `fast` slug, so its seat runs at `gemini-4-neon-xhigh`, its top slug. A Gemini 4 Neon entry in a panel role takes its own target, `xhigh` moved by the budget, so `large` keeps `gemini-4-neon-xhigh`, `medium` writes `gemini-4-neon-high`, and `small` writes `gemini-4-neon-medium`.",
       "files": "^skills/setup-pstack/SKILL\\.md$",
-      "replacement": "So `medium` turns `effort=xhigh` into `effort=high` and `effort=high` into `effort=medium`, and `small` turns them into `effort=medium` and `effort=low`. Opus 5.5 runs at standard speed, so never write `fastMode`, which on T3 is a priced fast mode. Claude lists no `fastMode` for Fable 5.2, and Antigravity lists no speed option for Gemini 4 Carbon. Gemini 4 Carbon's `thinking_level` tops out at `high`, so a Gemini entry runs at `high` when its role's target is `xhigh`.",
-      "rationale": "The sheet: a T3 entry carries its reasoning as an option, not a slug suffix. Cursor's -fast slug maps to the plain T3 model, because Claude's fastMode is a priced fast mode, not the same thing"
+      "replacement": "So `medium` turns `effort=xhigh` into `effort=high` and `effort=high` into `effort=medium`, and `small` turns them into `effort=medium` and `effort=low`. Opus 5.5 runs at standard speed, so never write `fastMode`, which on T3 is a priced fast mode. Claude lists no `fastMode` for Fable 5.2, and no provider lists a speed option for a Gemini model, so never write one. Gemini 4 Neon's reasoning levels run from `low` to `xhigh` with no `max`, so its seat runs at `xhigh`, its top level. A Gemini 4 Neon entry in a panel role takes its own target, `xhigh` moved by the budget, so `large` keeps `thought_level=xhigh` on Antigravity, `medium` writes `thought_level=high`, and `small` writes `thought_level=medium`.",
+      "rationale": "The sheet: a T3 entry carries its reasoning as an option, not a slug suffix. Cursor's -fast slug maps to the plain T3 model, because Claude's fastMode is a priced fast mode, not the same thing. Antigravity and OpenCode list only a reasoning option for their Gemini models, and Antigravity 1.5 lists thought_level low to xhigh for Gemini 4 Neon"
     },
     {
       "pattern": "with `alwaysApply: true`, the `# defaults: 3` line,",
@@ -56,7 +62,7 @@
     },
     {
       "pattern": "1. Install with `/add-plugin pstack` in chat, or from Customize in the sidebar.",
-      "replacement": "1. Install t3-pstack per its [README](https://github.com/chhoumann/t3-pstack#readme). One `npx -y github:chhoumann/t3-pstack install` run installs it in every Claude Code and Codex config home T3 can run.",
+      "replacement": "1. Install t3-pstack per its [README](https://github.com/chhoumann/t3-pstack#readme). One `npx -y github:chhoumann/t3-pstack install` run installs it in every home T3 can run.",
       "rationale": "Cursor's install UI does not exist on T3 (Per-skill notes: poteto-help)",
       "files": "^skills/poteto-help/SKILL\\.md$"
     },
@@ -86,13 +92,13 @@
     },
     {
       "pattern": "pstack is built for Cursor, and it also installs in Claude Code with `/plugin marketplace add cursor/plugins`, then `/plugin install pstack@cursor-plugins`. There, each command takes a `pstack:` prefix, such as `/pstack:poteto-mode`. The [Claude Code adapter](../../docs/harness/claude-code.md) maps the Cursor names, and a step that needs a Cursor-only feature, such as Bugbot or Automations, is skipped with a one-line note.\n\nOther tools can read the skills, because they use the Agent Skills format. But most workflow skills, including `/poteto-mode`, `/how`, and `/teach`, spawn Cursor subagents, some with per-role models, and Custom Modes and `/loop` are Cursor features, so those parts may not work there.",
-      "replacement": "t3-pstack is pstack rewritten for T3 Code, and it installs in Claude Code and Codex with `npx -y github:chhoumann/t3-pstack install`.\n\nIts workflow skills, including `/poteto-mode`, `/how`, and `/teach`, dispatch subagents through T3's `delegate_task`, some with per-role models, so those parts need a T3 thread.",
+      "replacement": "t3-pstack is pstack rewritten for T3 Code, and `npx -y github:chhoumann/t3-pstack install` installs it in every home T3 can run.\n\nIts workflow skills, including `/poteto-mode`, `/how`, and `/teach`, dispatch subagents through T3's `delegate_task`, some with per-role models, so those parts need a T3 thread.",
       "rationale": "states where the port runs and how it installs (Precedence)",
       "files": "^skills/poteto-help/SKILL\\.md$"
     },
     {
       "pattern": "- Enter on `/poteto-mode` attaches the skill to one message. It fades as the chat moves on.\n- Option+Enter on Mac or Alt+Enter on Windows, or Use as Mode from the skill entry, makes it a Custom Mode. It stays in context every turn until the user exits the mode, and it stays out of casual turns.\n- Cursor's docs list Custom Modes in the Agents Window and the CLI. Elsewhere, start each new task with `/poteto-mode`.",
-      "replacement": "- Invoking `/poteto-mode` attaches the skill to one message. It fades as the chat moves on, so start each new task with it.\n- Where the harness runs t3-pstack's session-start hook, each new chat is told when to enter `/poteto-mode` on its own.\n- Skill names differ by harness: `/t3-pstack:poteto-mode` on Claude Code, `$t3-pstack:poteto-mode` on Codex. This file writes every skill as `/<name>`.",
+      "replacement": "- Invoking `/poteto-mode` attaches the skill to one message. It fades as the chat moves on, so start each new task with it.\n- Where the harness runs t3-pstack's session-start hook, each new chat is told when to enter `/poteto-mode` on its own.\n- Skill names differ by harness: `/t3-pstack:poteto-mode` on Claude Code, `$t3-pstack:poteto-mode` on Codex, and `/poteto-mode` on Kiro. This file writes every skill as `/<name>`.",
       "rationale": "harness-specific invocation (Per-skill notes: poteto-help)",
       "files": "^skills/poteto-help/SKILL\\.md$"
     },
@@ -210,6 +216,12 @@
       "rationale": "Codex's model picks a shell read's output budget, often 3000 to 6000 tokens for a SKILL.md, and Codex 0.162.1 then cuts the middle of anything longer, which here is the Subagents section that holds the T3 dispatch rules. The head of a cut read survives, so the instruction sits there. tests/agent-skills.test.mjs keeps the file inside the 10000-token budget it names."
     },
     {
+      "pattern": "open its steps at `playbooks/<title>.md`, with the title in kebab case.",
+      "files": "^skills/poteto-mode/SKILL\\.md$",
+      "replacement": "open its steps at `playbooks/<title>.md` from this file (`skills/poteto-mode/playbooks/<title>.md`), with the title in kebab case.",
+      "rationale": "Codex agents that read a playbook in one shell call with sibling skills give it the skills/ base that `../<name>/SKILL.md` names, and open skills/playbooks/<title>.md, which does not exist (#71, by @adryanev). The path gets its base the way bundled skills do, and the parenthetical is a suffix that holds in the plugin cache and in a repo checkout."
+    },
+    {
       "pattern": "- Shipping UI / IDE / CLI → `control-ui` or `control-cli` from `cursor-team-kit`.",
       "replacement": "- Shipping UI / IDE / CLI → the matching control skill. That is the project's verify skill when it has one (`/create-verification-skill` makes one). Otherwise web UIs run through T3's `preview_*` tools, simulators through T3's `device_*` tools, and CLIs and TUIs through their own commands. The evidence is the artifact, such as a `preview_snapshot` saved with `save: true`, a recording, or the real output.",
       "rationale": "UI evidence",
@@ -271,7 +283,7 @@
     {
       "pattern": "and set the level the job needs.",
       "files": "^skills/poteto-mode/SKILL\\.md$",
-      "replacement": "and set the level the job needs with the entry's reasoning option (`effort` on Claude, `reasoningEffort` on Codex and Grok, `thinking_level` on Antigravity).",
+      "replacement": "and set the level the job needs with the entry's reasoning option (`effort` on Claude, `reasoningEffort` on Codex and Grok, `thought_level` on Antigravity).",
       "rationale": "The sheet: a T3 entry carries its reasoning level as a provider option, whose ID differs per provider"
     },
     {
@@ -287,10 +299,10 @@
       "rationale": "Model names: T3 defaults live in models.json"
     },
     {
-      "regex": "A Gemini seat never runs above `gemini-[^`]+`, its top slug\\.",
+      "pattern": "A Gemini seat runs at `gemini-4-neon-xhigh` unless its line names another level.",
       "files": "^skills/poteto-mode/SKILL\\.md$",
-      "replacement": "A Gemini seat never runs above `thinking_level=high`, the top level Antigravity lists for Gemini 4 Carbon.",
-      "rationale": "The sheet: Gemini 4 Carbon's level is Antigravity's thinking_level option, not a slug suffix"
+      "replacement": "A Gemini seat runs at an `xhigh` reasoning level unless its line names another level.",
+      "rationale": "The sheet: a Gemini entry's level is its provider's reasoning option (thought_level on Antigravity, variant on OpenCode), not a slug suffix. A literal pattern, so a new upstream level fails the sync instead of keeping this one"
     },
     {
       "pattern": "If the Task tool rejects a slug, never pass it again. Fall back to the role's line or default, then the calling skill's fallback, then the closest valid slug of the same family, then omit `model`.",
@@ -330,7 +342,7 @@
     },
     {
       "pattern": "With no path, before any other work, search `~/.cursor/plugins/` for a file whose path ends in `skills/poteto-mode/SKILL.md`. If more than one file matches, use the copy whose `.cursor-plugin/plugin.json` has the highest `version`.",
-      "replacement": "With no path, before any other work, search the harness's plugin directory (`~/.claude/plugins/` on Claude Code, `${CODEX_HOME:-~/.codex}/plugins/` on Codex) for a file whose path ends in `skills/poteto-mode/SKILL.md`. If more than one file matches, use the copy whose plugin manifest (`.claude-plugin/plugin.json` or `.codex-plugin/plugin.json`) has the highest `version`.",
+      "replacement": "With no path, before any other work, search the harness's plugin directory (`~/.claude/plugins/` on Claude Code, `${CODEX_HOME:-~/.codex}/plugins/` on Codex, and `${KIRO_HOME:-~/.kiro}/t3-pstack/` on Kiro) for a file whose path ends in `skills/poteto-mode/SKILL.md`. If more than one file matches, use the copy whose plugin manifest (`.claude-plugin/plugin.json` or `.codex-plugin/plugin.json`) has the highest `version`.",
       "rationale": "harness-specific plugin paths",
       "files": "^agents/poteto-agent\\.md$"
     },
@@ -494,7 +506,7 @@
     },
     {
       "pattern": "Look recursively for `.cursor/skills/**/*-mode/SKILL.md` and `~/.cursor/skills/*-mode/SKILL.md` matching the user's handle. Mode skills can live in a personal category directory (`.cursor/skills/<handle>/`), not only at the top level. If one exists, confirm intent with `AskQuestion`",
-      "replacement": "Look recursively for `*-mode/SKILL.md` in the project's and the user's skills directories (`.claude/skills/` and `~/.claude/skills/` on Claude Code, `.agents/skills/` and `~/.agents/skills/` on Codex and most other harnesses) matching the user's handle. Mode skills can live in a personal category directory (`<skills dir>/<handle>/`), not only at the top level. If one exists, confirm intent with a multiple-choice question (`AskUserQuestion` on Claude Code, numbered options in plain text elsewhere)",
+      "replacement": "Look recursively for `*-mode/SKILL.md` in the project's and the user's skills directories (`.claude/skills/` and `~/.claude/skills/` on Claude Code, `.kiro/skills/` and `~/.kiro/skills/` on Kiro, `.agents/skills/` and `~/.agents/skills/` on Codex and most other harnesses) matching the user's handle. Mode skills can live in a personal category directory (`<skills dir>/<handle>/`), not only at the top level. If one exists, confirm intent with a multiple-choice question (`AskUserQuestion` on Claude Code, numbered options in plain text elsewhere)",
       "rationale": "harness-specific skill dirs and question tool"
     },
     {
@@ -519,7 +531,7 @@
     },
     {
       "pattern": "For a new mode, use `.cursor/skills/<handle>/<handle>-mode/SKILL.md` when the repo has an established personal category for that handle. Otherwise default to `.cursor/skills/<handle>-mode/SKILL.md` in the project (or `~/.cursor/skills/<handle>-mode/` if the user prefers a personal skill).",
-      "replacement": "For a new mode, use `<skills dir>/<handle>/<handle>-mode/SKILL.md` when the repo has an established personal category for that handle. Otherwise default to `<skills dir>/<handle>-mode/SKILL.md` in the project, or in the user's skills directory if the user prefers a personal skill. `<skills dir>` is `.claude/skills` on Claude Code and `.agents/skills` elsewhere.",
+      "replacement": "For a new mode, use `<skills dir>/<handle>/<handle>-mode/SKILL.md` when the repo has an established personal category for that handle. Otherwise default to `<skills dir>/<handle>-mode/SKILL.md` in the project, or in the user's skills directory if the user prefers a personal skill. `<skills dir>` is `.claude/skills` on Claude Code, `.kiro/skills` on Kiro, and `.agents/skills` elsewhere.",
       "rationale": "harness-specific skill dirs"
     },
     {
@@ -529,7 +541,7 @@
     },
     {
       "pattern": "(`.cursor/skills/verify-<app>/`)",
-      "replacement": "(`<skills dir>/verify-<app>/`, where `<skills dir>` is `.claude/skills` on Claude Code and `.agents/skills` elsewhere)",
+      "replacement": "(`<skills dir>/verify-<app>/`, where `<skills dir>` is `.claude/skills` on Claude Code, `.kiro/skills` on Kiro, and `.agents/skills` elsewhere)",
       "rationale": "harness-specific skill dirs"
     },
     {
@@ -539,7 +551,7 @@
     },
     {
       "pattern": "(usually `.cursor/skills/verify-*/`)",
-      "replacement": "(usually `.claude/skills/verify-*/` on Claude Code or `.agents/skills/verify-*/` elsewhere)",
+      "replacement": "(usually `.claude/skills/verify-*/` on Claude Code, `.kiro/skills/verify-*/` on Kiro, or `.agents/skills/verify-*/` elsewhere)",
       "rationale": "harness-specific skill dirs"
     },
     {
@@ -617,14 +629,26 @@
     {
       "pattern": "status comes from the mode's watcher at `scripts/watch-pr/watch-pr`.",
       "files": "^skills/poteto-mode/playbooks/",
-      "replacement": "status comes from the mode's watcher at `<plugin root>/skills/poteto-mode/scripts/watch-pr/watch-pr`. Run `drive` as a loop inside the turn: run the watcher with `--timeout 540` and the shell's own timeout above 540 seconds and under the 600-second tool cap, act on its verdict, and run it again. Report and stop when the verdict's head SHA, kind, and reason have not changed for two hours, or after three hours in all. A `BLOCKER` with reason `review-required` or `merge-blocked` (exit 6) needs a person, so report it and stop the loop instead of rerunning the watcher. A wait for a human review is `watch_pull_request` and the end of the turn, because another account's review wakes the thread. Unwatch with `unwatch_pull_request` when babysitting stops.",
-      "rationale": "Playbooks: Babysit drive. A skill-relative path does not resolve from the project directory, the watcher has no deadline by default and a shell call stops at the 600-second tool cap, and the exit 6 merge gates come from pstack-claude #95 (t3-pstack 2.0.0-rc.2)"
+      "replacement": "status comes from the mode's watcher at `<plugin root>/skills/poteto-mode/scripts/watch-pr/watch-pr`. When the session can call T3's `watch_pull_request`, `drive` waits on it instead of looping. Register the PR with it, then run the watcher once with the `check`-mode flags below and act on what it shows, because the watch does not wake for a state the PR already has. While the PR still waits, end the turn, and on each wake run the watcher the same way. If only review settling is left, run one round of the loop below instead, because no event wakes the thread when the PR settles. Unwatch with `unwatch_pull_request` when babysitting stops. A delegated child neither watches nor loops: it reports the wait to the agent that started it. Any other session without `watch_pull_request` runs `drive` as a loop inside the turn: run the watcher with `--timeout 540` and the shell's own timeout above 540 seconds and under the 600-second tool cap, act on its verdict, and run it again. Report and stop when the verdict's head SHA, kind, and reason have not changed for two hours, or after three hours in all. A `BLOCKER` with reason `review-required` or `merge-blocked` (exit 6) needs a person, so report it and stop the loop instead of rerunning the watcher.",
+      "rationale": "Playbooks: Babysit drive. With T3's watch_pull_request, drive waits on the watch and ends the turn instead of looping the watcher in 540-second shell calls (#88, the idea @yqecea proposed in #76), so a session has one way to wait on a PR. Each wake takes one --status-only snapshot, so the watcher's readiness rules, review settling included, still decide the next step. No event wakes the thread when review activity settles, so that wait alone takes one bounded watcher call. The first snapshot runs right after registering, since T3 does not wake for checks or conflicts already in place. A delegate_task child neither watches nor loops, per worker.md, so the loop is only for sessions outside T3's watch. Without watch_pull_request the loop stays. A skill-relative path does not resolve from the project directory, the watcher has no deadline by default and a shell call stops at the 600-second tool cap, and the exit 6 merge gates come from pstack-claude #95 (t3-pstack 2.0.0-rc.2)"
     },
     {
       "pattern": "`scripts/watch-pr/watch-pr --queued-stack` under `/loop` until it reports `COMPLETE` at the ceiling. Pass the run's PR numbers, bottom-to-top, in `--stack-prs`, and pass the same list each time you restart the watcher.",
       "files": "^skills/poteto-mode/playbooks/",
       "replacement": "`<plugin root>/skills/poteto-mode/scripts/watch-pr/watch-pr --queued-stack` as a loop inside the turn until it reports `COMPLETE` at the ceiling. Pass the run's PR numbers, bottom-to-top, in `--stack-prs`, and pass the same list each time you restart the watcher. Run it with `--timeout 540` and the shell's own timeout above 540 seconds and under the 600-second tool cap, check the ceiling after each return, and report and stop after three hours. `watch_pull_request` cannot stand in here, because it does not wake on a merge or on merge-queue state.",
       "rationale": "Playbooks: Shipping (the watcher loops inside the turn); a skill-relative path does not resolve from the project directory"
+    },
+    {
+      "pattern": "Merge it once its checks pass and its verdict survives.",
+      "files": "^skills/poteto-mode/playbooks/shipping\\.md$",
+      "replacement": "Merge it once its checks pass and its verdict survives. When the session can call T3's `watch_pull_request`, wait for those checks on it as Babysit's `drive` does.",
+      "rationale": "Playbooks: Shipping. After step 4's push, the wait for the next PR's checks registers the PR with T3's watch_pull_request and ends the turn, as Babysit's drive does, instead of looping the watcher (#88, the idea @yqecea proposed in #76)"
+    },
+    {
+      "pattern": "On GitHub, watch the run with",
+      "files": "^skills/poteto-mode/playbooks/shipping\\.md$",
+      "replacement": "On GitHub, when a merge queue or auto-merge lands the run, or the session cannot call `watch_pull_request`, watch the run with",
+      "rationale": "Playbooks: Shipping. T3's watch_pull_request does not wake on a merge or on merge-queue state, so a run that a merge queue or auto-merge lands keeps the queued watcher loop, and a session without watch_pull_request keeps it too (#88, the idea @yqecea proposed in #76)"
     },
     {
       "pattern": "run `scripts/worktree-audit.sh",

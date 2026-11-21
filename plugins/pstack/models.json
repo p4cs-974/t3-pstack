@@ -5,11 +5,11 @@
     "panel": [
       "claudeAgent/claude-fable-5-2 effort=high",
       "claudeAgent/claude-opus-5-5 effort=high",
-      "antigravity/gemini-4-carbon thinking_level=high"
+      "antigravity/gemini-4-neon thought_level=xhigh"
     ],
     "judges": [
       "claudeAgent/claude-opus-5-5 effort=high",
-      "antigravity/gemini-4-carbon thinking_level=high"
+      "antigravity/gemini-4-neon thought_level=xhigh"
     ]
   },
   "roles": [

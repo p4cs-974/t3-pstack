@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 
 export const PLUGIN = "plugins/pstack";
 export const SKILLS = `${PLUGIN}/skills`;
+export const INSTALL_RECORD = ".t3-pstack-install.json";
 
 // Each hooks file's digest and the release that last changed it. A hooks
 // file's digest ignores its formatting.

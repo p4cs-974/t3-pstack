@@ -43,7 +43,7 @@ import { Value } from "typebox/value";
 
 import { panelFamilies, parseEntry } from "../plugins/pstack/skills/setup-pstack/scripts/t3-sheet.mjs";
 import { applyRegions, parseFrontmatter, ROUTED_SKILL, t3Regions } from "./derive-t3.mjs";
-import { FROZEN_HOOKS, hookDigest, PLUGIN, SKILLS } from "./plugin.mjs";
+import { FROZEN_HOOKS, hookDigest, INSTALL_RECORD, PLUGIN, SKILLS } from "./plugin.mjs";
 import { pathIsInside, validateSkillsTree, walk } from "./validate-skills.mjs";
 
 export { parseFrontmatter };
@@ -178,6 +178,10 @@ export function validatePluginLayout(pluginRoot) {
   // and truncates each injected SKILL.md to 8,000 bytes.
   if (existsSync(join(pluginRoot, "plugin.json"))) {
     throw new Error(`${PLUGIN}/plugin.json exists; Codex would truncate every injected SKILL.md to 8,000 bytes`);
+  }
+  // A shipped record would make a hand copy of the plugin pass for the installer's.
+  if (existsSync(join(pluginRoot, INSTALL_RECORD))) {
+    throw new Error(`${PLUGIN}/${INSTALL_RECORD} exists; the Kiro installer writes it into each copy it makes`);
   }
   // tools/sync.mjs writes an unresolved three-way merge with git's markers and
   // still advances the pin, so this check is what keeps it out of a release.

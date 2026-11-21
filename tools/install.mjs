@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // t3-pstack's installer. `install`, or `update`, the same command, brings
-// every Claude Code and Codex home T3 can run, and the profile of each
+// every Claude Code, Codex, and Kiro home T3 can run, and the profile of each
 // Antigravity instance T3 runs, to this package's version of t3-pstack, pins each Codex home's marketplace to that version's tag, trusts
 // the Codex session-start hook, and moves the model sheet to its one path per
 // machine. Each step converges, so a second run changes nothing. `doctor`
@@ -8,9 +8,9 @@
 // it starts refreshes a Git marketplace, as any T3 Codex thread does. Both
 // exit 1 when a check fails.
 //
-// Each home's t3-pstack marketplace must come from chhoumann/t3-pstack, from
-// the repository npx fetched this installer from, or from this run's
-// --source, which defaults to that repository. A home whose marketplace has another source, such as a
+// Each home's t3-pstack marketplace must come from chhoumann/t3-pstack or
+// from this run's --source, which defaults to the repository npx fetched this
+// installer from. A home whose marketplace has another source, such as a
 // local --source from an earlier run, gets nothing installed and no hook
 // trusted, and doctor fails it with that source. A run never switches a
 // home's source: one from chhoumann/t3-pstack stays on it under another
@@ -25,11 +25,12 @@
 // of the plugin this run installs, at ~/.gemini/t3-pstack, so it too changes
 // only when `update` runs. T3 lists an Antigravity thread's skills only from
 // ~/.gemini/config/skills, so each skill is linked there and each profile
-// links its plugin, skills, and agents to that copy.
+// links its plugin, skills, and agents to that copy. Each Kiro home gets its
+// own copy, which also changes only when `update` runs.
 //
 //   npx -y github:chhoumann/t3-pstack <install|update|doctor>
 //     --source <owner/repo|git URL|dir>   marketplace source, default the repo npx ran, else chhoumann/t3-pstack
-//     --claude-home <dir>, --codex-home <dir>   more homes, repeatable
+//     --claude-home <dir>, --codex-home <dir>, --kiro-home <dir>   more homes, repeatable
 //     --catalog <file>   an orchestrator_capabilities dump to check the sheet's targets against
 //     --json
 // Node 20 or later, no dependencies.
@@ -44,6 +45,7 @@ import { doctorClaude, installClaude } from "./install/claude.mjs";
 import { doctorCodex, installCodex } from "./install/codex.mjs";
 import { check, hasCli, HOME_REPO, installHint, npxOrigin, parseSource, readJson } from "./install/common.mjs";
 import { discoverHomes } from "./install/homes.mjs";
+import { doctorKiro, installKiro } from "./install/kiro.mjs";
 import { doctorSheet, moveSheet, sheetPath } from "./install/sheet.mjs";
 import { FROZEN_HOOKS } from "./plugin.mjs";
 
@@ -51,13 +53,14 @@ const HARNESSES = {
   claude: { name: "Claude Code", install: installClaude, doctor: doctorClaude },
   codex: { name: "Codex", install: installCodex, doctor: doctorCodex },
   antigravity: { name: "Antigravity", install: installAntigravity, doctor: doctorAntigravity },
+  kiro: { name: "Kiro", install: installKiro, doctor: doctorKiro },
 };
 // Released versions read a model sheet only in Claude Code and Codex homes.
 const SHEET_HARNESSES = new Set(["claude", "codex"]);
 
 const USAGE =
   "usage: t3-pstack <install|update|doctor> [--source <owner/repo|git URL|dir>] " +
-  "[--claude-home <dir>]... [--codex-home <dir>]... [--catalog <file>] [--json]";
+  "[--claude-home <dir>]... [--codex-home <dir>]... [--kiro-home <dir>]... [--catalog <file>] [--json]";
 
 // What to converge on comes from the plugin this run installs: the local
 // source, or else this package, which is the marketplace's own repo. `skills`
@@ -87,6 +90,7 @@ async function run(argv, env, home) {
       source: { type: "string" },
       "claude-home": { type: "string", multiple: true, default: [] },
       "codex-home": { type: "string", multiple: true, default: [] },
+      "kiro-home": { type: "string", multiple: true, default: [] },
       catalog: { type: "string" },
       json: { type: "boolean", default: false },
     },
@@ -98,7 +102,7 @@ async function run(argv, env, home) {
   const origin = npxOrigin(packageRoot) ?? HOME_REPO;
   const source = parseSource(values.source ?? origin, home);
   const facts = pluginFacts(source.local ?? packageRoot);
-  const trusted = new Set([HOME_REPO, origin].map((repo) => parseSource(repo, home).key).concat(source.key));
+  const trusted = new Set([parseSource(HOME_REPO, home).key, source.key]);
   const hint = installHint(source);
   const context = { source, trusted, hint, userHome: home, pluginRoot: facts.pluginRoot, version: facts.version, skills: facts.skills, codexHook: facts.codexHook };
   const { homes, settings } = discoverHomes({
@@ -106,10 +110,20 @@ async function run(argv, env, home) {
     home,
     claudeHomes: values["claude-home"],
     codexHomes: values["codex-home"],
+    kiroHomes: values["kiro-home"],
   });
   const catalog = values.catalog ? readJson(values.catalog) : null;
 
-  const report = { command, version: facts.version, source: source.arg, settings, homes: [] };
+  const secretChecks = settings.secrets.map((from) =>
+    check(
+      from,
+      false,
+      "its KIRO_HOME is a secret, which the installer cannot read, so it skipped that instance",
+      `${hint} with \`--kiro-home <dir>\`, naming the directory that KIRO_HOME holds`,
+      true,
+    ),
+  );
+  const report = { command, version: facts.version, source: source.arg, settings: { ...settings, checks: secretChecks }, homes: [] };
   for (const target of homes) {
     const harness = HARNESSES[target.harness];
     const row = { harness: target.harness, dir: target.dir, from: target.from, steps: [], checks: [] };
@@ -138,7 +152,7 @@ async function run(argv, env, home) {
     report.sheet.checks.push(check("move", false, err.message, hint));
   }
   report.sheet.checks.push(...doctorSheet(sheet, sheetHomes, { catalog, roles: facts.roles, tiers: facts.tiers, retired: facts.retired, hint }));
-  const all = [...report.homes.flatMap((row) => row.checks), ...report.sheet.checks];
+  const all = [...secretChecks, ...report.homes.flatMap((row) => row.checks), ...report.sheet.checks];
   report.failed = all.filter((c) => !c.ok && !c.warn).length;
   report.warnings = all.filter((c) => !c.ok && c.warn).length;
   return { report, json: values.json };
@@ -146,7 +160,6 @@ async function run(argv, env, home) {
 
 function render({ command, version, source, settings, homes, sheet, failed, warnings }, home) {
   const lines = [`t3-pstack ${version} from ${source}`];
-  lines.push(`T3 settings: ${settings.path}${settings.error ? ` (${settings.error})` : `, ${settings.instances} Claude Code, Codex, or Antigravity instances`}`);
   const section = (title, steps, checks) => {
     lines.push("", title);
     for (const step of steps) lines.push(`  - ${step}`);
@@ -155,6 +168,11 @@ function render({ command, version, source, settings, homes, sheet, failed, warn
       if (!c.ok) lines.push(`        fix: ${c.fix}`);
     }
   };
+  section(
+    `T3 settings: ${settings.path}${settings.error ? ` (${settings.error})` : `, ${settings.instances} Claude Code, Codex, Antigravity, or Kiro instances`}`,
+    [],
+    settings.checks,
+  );
   for (const row of homes) section(`${HARNESSES[row.harness].name}  ${row.dir}  (${row.from.join(", ")})`, row.steps, row.checks);
   section(`Model sheet  ${sheet.path}`, sheet.steps, sheet.checks);
   const changed = [...homes.flatMap((row) => row.steps), ...sheet.steps].length;

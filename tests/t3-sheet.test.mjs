@@ -1,7 +1,8 @@
 // The T3 sheet grammar and its check against an orchestrator_capabilities
 // catalog. The fixture is a trimmed copy of a real catalog: Claude names its
-// reasoning option `effort`, Codex and Grok name it `reasoningEffort`, and an
-// unauthenticated provider lists models it cannot run.
+// reasoning option `effort`, Codex and Grok name it `reasoningEffort`,
+// Antigravity 1.5 names it `thought_level`, and an unauthenticated provider
+// lists models it cannot run.
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
@@ -120,7 +121,7 @@ describe("checkSheet against a catalog", () => {
     const problems = (lines) => check(lines.join("\n"), values);
     const missingDefault = (p) =>
       p.includes('(no line, tier default): claudeAgent/claude-fable-5-2: "claudeAgent" does not list model "claude-fable-5-2"') ||
-      p.includes('(no line, tier default): antigravity/gemini-4-carbon: no provider instance "antigravity" in this T3');
+      p.includes('(no line, tier default): antigravity/gemini-4-neon: no provider instance "antigravity" in this T3');
     const valid = [
       "bug-fix: claudeAgent/claude-opus-5-5 effort=high fastMode=true",
       "feature, refactoring: codex/gpt-6.1-sol reasoningEffort=xhigh serviceTier=priority",
@@ -156,7 +157,7 @@ describe("checkSheet against a catalog", () => {
     const panelRoles = roles.filter((r) => Array.isArray(defaults[r.tier])).map((r) => r.role);
     expect(check("session hook: on", noGemini)).toEqual(
       panelRoles.map(
-        (role) => `${role} (no line, tier default): antigravity/gemini-4-carbon: no provider instance "antigravity" in this T3`,
+        (role) => `${role} (no line, tier default): antigravity/gemini-4-neon: no provider instance "antigravity" in this T3`,
       ),
     );
     const lines = panelRoles.map((role) => `${role}: claudeAgent/claude-opus-5-5, codex/gpt-6.1-sol`).join("\n");
@@ -205,7 +206,7 @@ describe("checkSheet against a catalog", () => {
 
   test("the cross-judge pool takes a list of two families, as a panel does", () => {
     const pool = "arena cross-judge pool";
-    expect(check(`${pool}: claudeAgent/claude-opus-5-5 effort=high, antigravity/gemini-4-carbon thinking_level=high`)).toEqual([]);
+    expect(check(`${pool}: claudeAgent/claude-opus-5-5 effort=high, antigravity/gemini-4-carbon thought_level=high`)).toEqual([]);
     expect(check(`${pool}: claudeAgent/claude-opus-5-5 effort=high`)).toEqual([
       `${pool}: a panel needs at least two model families among its targets (inherit-parent does not count), got claude`,
     ]);
@@ -263,8 +264,10 @@ describe("checkSheet against a catalog", () => {
 
   // 2.4.0 retired hardest tasks (strongest judgment before upstream's 0.15.21),
   // the two reflect roles, and architect runners, with pstack 0.15.43. Every
-  // sheet setup-pstack wrote before that carries their lines.
-  test("a sheet written by 2.3.0 still passes with the lines of the roles 2.4.0 retired", () => {
+  // sheet setup-pstack wrote before that carries their lines. 2.3.0 also wrote
+  // Antigravity 1.4's `thinking_level`, which Antigravity 1.5 renamed
+  // `thought_level`, so only that live line fails until /setup-pstack reruns.
+  test("a sheet written by 2.3.0 passes the lines of the roles 2.4.0 retired", () => {
     const released = [
       "# defaults: 2",
       "# budget: large (xhigh)",
@@ -276,7 +279,9 @@ describe("checkSheet against a catalog", () => {
       "architect runners: claudeAgent/claude-fable-5-2 effort=high, claudeAgent/claude-opus-5-5 effort=high fastMode=true, antigravity/gemini-4-carbon thinking_level=high",
       "session hook: on",
     ];
-    expect(check(released.join("\n"))).toEqual([]);
+    expect(check(released.join("\n"))).toEqual([
+      'arena cross-judge pool: antigravity/gemini-4-carbon: no option "thinking_level" (has thought_level)',
+    ]);
     expect(check("strongest judgment: provider-gone/model-gone\narchitect runners: provider-gone/model-gone")).toEqual([]);
   });
 

@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { agentSkills } from "../tools/generate.mjs";
+import { hookCommand as kiroHookCommand } from "../tools/install/kiro.mjs";
 import { sheetCases, writeSheet } from "./session-hook-sheets.mjs";
 
 const pluginRoot = fileURLToPath(new URL("../plugins/pstack/", import.meta.url));
@@ -16,7 +17,8 @@ const mandate = readFileSync(join(pluginRoot, "hooks/session-start-context.md"),
 const codexManifest = JSON.parse(readFileSync(join(pluginRoot, ".codex-plugin/plugin.json"), "utf8"));
 
 // Claude Code loads hooks/hooks.json by convention; Codex loads the file its
-// manifest names; Antigravity loads hooks.json at the plugin root.
+// manifest names; Antigravity loads hooks.json at the plugin root; Kiro loads
+// the hooks file the installer writes into its home.
 const sessionStart = Object.fromEntries(
   Object.entries({ claude: "hooks/hooks.json", codex: codexManifest.hooks }).map(([runtime, file]) => [
     runtime,
@@ -28,6 +30,7 @@ const commands = {
   claude: sessionStart.claude.hooks[0].command,
   codex: sessionStart.codex.hooks[0].command,
   antigravity: antigravityHooks[0].command,
+  kiro: kiroHookCommand(pluginRoot),
 };
 
 // Antigravity replies in JSON and injects each step's text as a system message.
@@ -35,6 +38,14 @@ const decodeAntigravity = (out) => {
   const steps = JSON.parse(out).injectSteps;
   expect(steps).toHaveLength(1);
   return steps[0].systemMessage.systemMessage;
+};
+
+const decodeKiro = (out) => {
+  const paragraph = out.slice(mandate.length);
+  for (const text of ["`/t3-pstack:<name>` is `/<name>`", `\`<plugin root>\` is \`${pluginRoot}\``, "`t3-code` MCP server"]) {
+    expect(paragraph).toContain(text);
+  }
+  return out.slice(0, mandate.length);
 };
 
 // CODEX_HOME and CLAUDE_CONFIG_DIR are only present when the user has
@@ -63,6 +74,14 @@ const runtimes = {
     env: () => ({ PLUGIN_ROOT: pluginRoot }),
     reply: decodeAntigravity,
     silent: "{}\n",
+  },
+  // Kiro names no plugin root, so the hook must use the one its command passes.
+  kiro: {
+    hooks: "kiro",
+    sheetDir: ".config/t3-pstack",
+    sheetFile: "models.md",
+    env: () => ({ CLAUDE_PLUGIN_ROOT: "/nonexistent" }),
+    reply: decodeKiro,
   },
 };
 
@@ -107,7 +126,7 @@ describe("SessionStart hook", () => {
       const r = runHook("claude", null, `"\${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh" ${arg}`);
       expect(r.status).not.toBe(0);
       expect(r.out).toBe("");
-      expect(r.err.trimEnd().split("\n")).toEqual([`session-start.sh: unknown runtime '${arg}' (expected claude, codex, or antigravity)`]);
+      expect(r.err.trimEnd().split("\n")).toEqual([`session-start.sh: unknown runtime '${arg}' (expected claude, codex, antigravity, or kiro)`]);
     });
   }
 

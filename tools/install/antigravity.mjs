@@ -9,8 +9,8 @@
 // to one file, and reports it under config/skills, so a skill finds <plugin
 // root> at <profile>/config, whose agents/ is linked too. `agy plugin
 // install` writes ~/.gemini whatever GEMINI_HOME says, so the installer makes
-// the copy and links itself.
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, renameSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync } from "node:fs";
+// the copy and links itself. Antigravity CLI 1.5.0 or later loads the plugin.
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync } from "node:fs";
 import path, { dirname, join, relative, sep } from "node:path";
 
 import { check, pluginIntact, readJson, tempBeside } from "./common.mjs";
@@ -129,9 +129,10 @@ const installedVersion = (dir) => (canonicalState(dir) === "ours" ? readJson(joi
 // The copy has every file a session reads, each as a file: the manifest, each
 // skill, the hook file agy runs and the scripts under hooks/, and each agent.
 const isFile = (file) => statSync(file, { throwIfNoEntry: false })?.isFile() === true;
+const HOOK_FILES = ["hooks.json", "hooks/session-start.sh", "hooks/session-start-context.md", "skills/setup-pstack/scripts/read-sheet.sh"];
 const intact = (dir, { pluginRoot, skills }) =>
   pluginIntact(dir, ANTIGRAVITY_MANIFEST, skills) &&
-  isFile(join(dir, "hooks.json")) &&
+  HOOK_FILES.every((file) => isFile(join(dir, file)) && readFileSync(join(dir, file)).equals(readFileSync(join(pluginRoot, file)))) &&
   ["hooks", "agents"].every((sub) => readdirSync(join(pluginRoot, sub)).every((file) => isFile(join(dir, sub, file))));
 
 // The canonical copy, swapped in whole by rename, so a session never loads
@@ -156,7 +157,7 @@ function installCanonical(dir, context) {
     throw err;
   }
   if (old) rmSync(old, { recursive: true, force: true });
-  return [before === undefined ? `installed ${version}` : before === version ? `reinstalled ${version}, whose files were missing` : `updated ${before} to ${version}`];
+  return [before === undefined ? `installed ${version}` : before === version ? `reinstalled ${version}, whose files were missing or changed` : `updated ${before} to ${version}`];
 }
 
 // Our links of a skill this release no longer ships: the exact link an
@@ -224,7 +225,7 @@ export function doctorAntigravity(home, context) {
       : check(
           "installed",
           installed === version && whole,
-          !installed ? "not installed" : installed !== version ? `${installed}, expected ${version}` : whole ? installed : `${installed}, but its files at ${canonical} are missing`,
+          !installed ? "not installed" : installed !== version ? `${installed}, expected ${version}` : whole ? installed : `${installed}, but its files at ${canonical} are missing or changed`,
           hint,
         ),
     check(
