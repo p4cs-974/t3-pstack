@@ -5,14 +5,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { hooksFile as antigravityHooksFile } from "../tools/install/antigravity.mjs";
 import { sheetCases, writeSheet } from "./session-hook-sheets.mjs";
 
 const pluginRoot = fileURLToPath(new URL("../plugins/pstack/", import.meta.url));
 const manifest = JSON.parse(readFileSync(join(pluginRoot, ".codex-plugin/plugin.json"), "utf8"));
 const handler = JSON.parse(readFileSync(join(pluginRoot, manifest.hooks), "utf8")).hooks.SessionStart[0].hooks[0];
 const mandate = readFileSync(join(pluginRoot, "hooks/session-start-context.md"), "utf8");
+const antigravityCommand = JSON.parse(antigravityHooksFile("win32"))["t3-pstack"].SessionStart[0].command;
 
-function runHook({ sheet, codexHome, homeSheet, machineSheet, context = mandate, host = "cmd" } = {}) {
+function runHook({ runtime = "codex", arg, sheet, codexHome, homeSheet, machineSheet, context = mandate, host = "cmd" } = {}) {
   const fixture = mkdtempSync(join(tmpdir(), "pstack windows hook "));
   try {
     const plugin = join(fixture, "plugin with spaces");
@@ -32,14 +34,17 @@ function runHook({ sheet, codexHome, homeSheet, machineSheet, context = mandate,
     const contextPath = join(plugin, "hooks/session-start-context.md");
     if (context === null) rmSync(contextPath);
     else writeFileSync(contextPath, context);
-    const command = handler.commandWindows.replaceAll("${CLAUDE_PLUGIN_ROOT}", plugin);
+    // Antigravity runs its command in the plugin root with `cmd /c`, and
+    // exports PLUGIN_ROOT.
+    const antigravity = runtime === "antigravity";
+    const command = antigravity ? antigravityCommand : handler.commandWindows.replaceAll("${CLAUDE_PLUGIN_ROOT}", plugin) + (arg ? ` ${arg}` : "");
     const env = {
       SystemRoot: process.env.SystemRoot,
       PATH: join(process.env.SystemRoot, "System32/WindowsPowerShell/v1.0"),
       PATHEXT: process.env.PATHEXT,
       USERPROFILE: profile,
       HOME: join(fixture, "other home"),
-      CLAUDE_PLUGIN_ROOT: plugin,
+      [antigravity ? "PLUGIN_ROOT" : "CLAUDE_PLUGIN_ROOT"]: plugin,
       PSExecutionPolicyPreference: "Restricted",
     };
     for (const name of ["TEMP", "TMP", "LOCALAPPDATA", "APPDATA", "ProgramData", "PSModulePath"]) {
@@ -49,6 +54,7 @@ function runHook({ sheet, codexHome, homeSheet, machineSheet, context = mandate,
     const executable = host === "cmd" ? process.env.ComSpec ?? "cmd.exe" : "powershell.exe";
     const args = host === "cmd" ? ["/d", "/s", "/c", command] : ["-NoProfile", "-EncodedCommand", Buffer.from(command, "utf16le").toString("base64")];
     const result = spawnSync(executable, args, {
+      cwd: antigravity ? plugin : undefined,
       env,
       encoding: "utf8",
       windowsVerbatimArguments: host === "cmd",
@@ -104,10 +110,46 @@ describe.skipIf(process.platform !== "win32" && !required)("Windows Codex Sessio
     expect(runHook({ context })).toEqual({ status: 0, out: context, err: "" });
   });
 
+  test("fails on a runtime it does not know", () => {
+    const result = runHook({ arg: "cursor" });
+    expect(result.status).not.toBe(0);
+    expect(result.out).toBe("");
+    expect(result.err).toContain("cursor");
+  });
+
   test("fails when the context cannot be read", () => {
     const result = runHook({ context: null });
     expect(result.status).not.toBe(0);
     expect(result.out).toBe("");
     expect(result.err).not.toBe("");
+  });
+});
+
+// The bytes session-start.sh writes for Antigravity.
+const antigravityReply = (context) => `{"injectSteps":[{"systemMessage":{"systemMessage":${JSON.stringify(context)}}}]}\n`;
+
+describe.skipIf(process.platform !== "win32" && !required)("Windows Antigravity SessionStart hook", () => {
+  const run = (options) => runHook({ runtime: "antigravity", ...options });
+
+  test("injects the shared context as session-start.sh does, without a sheet or Bash", () => {
+    expect(run()).toEqual({ status: 0, out: antigravityReply(mandate), err: "" });
+  });
+
+  test("reads the machine sheet and never the Codex home sheet", () => {
+    expect(run({ machineSheet: "session hook: off\n" })).toEqual({ status: 0, out: "{}\n", err: "" });
+    for (const codexHome of [undefined, true]) {
+      expect(run({ codexHome, sheet: "session hook: off\n" })).toEqual({ status: 0, out: antigravityReply(mandate), err: "" });
+    }
+  });
+
+  for (const { name, sheet, off } of sheetCases) {
+    test(`${off ? "injects nothing" : "injects the context"} when the machine sheet has ${name}`, () => {
+      expect(run({ machineSheet: sheet })).toEqual({ status: 0, out: off ? "{}\n" : antigravityReply(mandate), err: "" });
+    });
+  }
+
+  test("escapes quotes, backslashes, tabs, and line ends, and writes UTF-8", () => {
+    const context = 'Routing: "t3-pstack" in C:\\Users\\a b\tcafé 中文 🚀\r\nnext\n';
+    expect(run({ context })).toEqual({ status: 0, out: antigravityReply(context), err: "" });
   });
 });

@@ -15,10 +15,10 @@
 // folder, else ~/.kiro. T3 runs its `config.binaryPath`, else kiro-cli
 // (packages/provider-kiro/src/server/acpSupport.ts and driver.ts).
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 
-import { expandHome as expand } from "./common.mjs";
+import { expandHome as expand, readJsonText } from "./common.mjs";
 
 const DRIVERS = { claudeAgent: "claude", codex: "codex", antigravity: "antigravity", kiro: "kiro" };
 const HARNESSES = {
@@ -35,7 +35,7 @@ export function t3SettingsPath(env, home) {
 
 function readT3Settings(path) {
   try {
-    const settings = JSON.parse(readFileSync(path, "utf8"));
+    const settings = JSON.parse(readJsonText(path));
     return { instances: settings.providerInstances ?? {}, overrides: settings.projectSettingsOverrides ?? {} };
   } catch (err) {
     // JSON.parse's message quotes the text around the fault, which can hold a token.

@@ -3,6 +3,9 @@ set -eu
 
 # Each runtime's hooks file passes its own name.
 # Literal plugin paths, so a static reader of the hooks files can follow them.
+# A runtime that reads a JSON reply sets the text around the context string.
+reply_head=
+reply_tail=
 case "${1:-}" in
   claude)
     home_sheet="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/t3-pstack-models.md"
@@ -19,6 +22,18 @@ case "${1:-}" in
     home_sheet=
     reader="${PLUGIN_ROOT}/skills/setup-pstack/scripts/read-sheet.sh"
     context="${PLUGIN_ROOT}/hooks/session-start-context.md"
+    # Antigravity injects each step's text as a system message.
+    reply_head='{"injectSteps":[{"systemMessage":{"systemMessage":'
+    reply_tail='}}]}'
+    ;;
+  devin)
+    # No released version read a sheet in a Devin home.
+    home_sheet=
+    reader="${CLAUDE_PLUGIN_ROOT}/skills/setup-pstack/scripts/read-sheet.sh"
+    context="${CLAUDE_PLUGIN_ROOT}/hooks/session-start-context.md"
+    # Devin injects SessionStart context only from this JSON on stdout.
+    reply_head='{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":'
+    reply_tail='}}'
     ;;
   kiro)
     # Kiro names no plugin root, so the installer's hooks file passes it. No
@@ -28,7 +43,7 @@ case "${1:-}" in
     context="$2/hooks/session-start-context.md"
     ;;
   *)
-    echo "session-start.sh: unknown runtime '${1:-}' (expected claude, codex, antigravity, or kiro)" >&2
+    echo "session-start.sh: unknown runtime '${1:-}' (expected claude, codex, antigravity, devin, or kiro)" >&2
     exit 2
     ;;
 esac
@@ -47,14 +62,13 @@ if printf '%s\n' "$normalized" | grep -qx 'session hook: off'; then
   off=true
 fi
 
-# Antigravity reads a JSON reply and injects each step's text as a system message.
-if [ "$1" = antigravity ]; then
+if [ -n "$reply_head" ]; then
   if $off; then
     echo '{}'
   else
-    awk 'BEGIN { printf "{\"injectSteps\":[{\"systemMessage\":{\"systemMessage\":\"" }
+    awk -v head="$reply_head" -v tail="$reply_tail" 'BEGIN { printf "%s\"", head }
       { gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\t/, "\\t"); gsub(/\r/, "\\r"); printf "%s\\n", $0 }
-      END { print "\"}}]}" }' "$context"
+      END { print "\"" tail }' "$context"
   fi
 elif ! $off; then
   cat "$context"

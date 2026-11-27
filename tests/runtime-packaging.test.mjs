@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { validateAntigravityHooks, validateCodexMarketplace, validateHooks } from "../tools/generate.mjs";
+import { hooksFile as antigravityHooksFile } from "../tools/install/antigravity.mjs";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
@@ -177,9 +178,15 @@ describe("validateAntigravityHooks", () => {
   const file = (spec) => JSON.stringify({ "t3-pstack": spec });
   const run = { type: "command", command: "sh ./hooks/session-start.sh antigravity" };
 
-  test("passes the shipped file", () => {
-    const hooks = readFileSync(join(repoRoot, "plugins/pstack/hooks.json"), "utf8");
-    expect(() => validateAntigravityHooks(hooks, { statOf: (rel) => existsSync(join(repoRoot, "plugins/pstack", rel)) })).not.toThrow();
+  test.each(["linux", "win32"])("passes the file the installer writes on %s", (platform) => {
+    const statOf = (rel) => existsSync(join(repoRoot, "plugins/pstack", rel));
+    expect(() => validateAntigravityHooks(antigravityHooksFile(platform), { statOf })).not.toThrow();
+  });
+
+  test("faults a PowerShell script missing from the plugin", () => {
+    expect(() => validateAntigravityHooks(antigravityHooksFile("win32"), { statOf: () => null })).toThrow(
+      "t3-pstack: hooks/session-start.ps1 does not exist in the plugin",
+    );
   });
 
   test("faults a script missing from the plugin", () => {
@@ -191,12 +198,14 @@ describe("validateAntigravityHooks", () => {
   test("faults a command that runs no plugin script, since it starts in the plugin root", () => {
     expect(() =>
       validateAntigravityHooks(file({ SessionStart: [{ command: '"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh" claude' }] }), { statOf: () => true }),
-    ).toThrow("command does not run a plugin script with sh ./<path>");
+    ).toThrow("command does not run a plugin script with sh ./<path> or powershell.exe -File ./<path>");
   });
 
-  test("faults Claude Code's shape, which Antigravity would not load", () => {
+  test("faults Claude Code's shape and Devin's, which Antigravity would not load", () => {
     const claudeShape = readFileSync(join(repoRoot, "plugins/pstack/hooks/hooks.json"), "utf8");
     expect(() => validateAntigravityHooks(claudeShape, { statOf: () => true })).toThrow("unknown key matcher, hooks");
+    const devinShape = readFileSync(join(repoRoot, "plugins/pstack/hooks.json"), "utf8");
+    expect(() => validateAntigravityHooks(devinShape, { statOf: () => true })).toThrow("SessionStart must be object");
     expect(() => validateAntigravityHooks(file({ SessionStart: [{ ...run, matcher: "startup" }] }), { statOf: () => true })).toThrow(
       "unknown key matcher",
     );

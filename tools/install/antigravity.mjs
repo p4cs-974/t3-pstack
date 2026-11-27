@@ -10,7 +10,7 @@
 // root> at <profile>/config, whose agents/ is linked too. `agy plugin
 // install` writes ~/.gemini whatever GEMINI_HOME says, so the installer makes
 // the copy and links itself. Antigravity CLI 1.5.0 or later loads the plugin.
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import path, { dirname, join, relative, sep } from "node:path";
 
 import { check, pluginIntact, readJson, tempBeside } from "./common.mjs";
@@ -126,19 +126,30 @@ function canonicalState(dir) {
 
 const installedVersion = (dir) => (canonicalState(dir) === "ours" ? readJson(join(dir, ANTIGRAVITY_MANIFEST)).version : undefined);
 
+// agy loads a plugin's hooks only from hooks.json at its root, and runs each
+// command in that directory with `sh -c` on Unix and `cmd /c` on Windows. Its
+// hooks file has no Windows command, so the installer writes the copy's
+// hooks.json for the platform it runs on. The plugin's own root hooks.json is
+// Devin's.
+const hookCommand = (platform) =>
+  platform === "win32" ? "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./hooks/session-start.ps1 antigravity" : "sh ./hooks/session-start.sh antigravity";
+export const hooksFile = (platform) =>
+  JSON.stringify({ "t3-pstack": { SessionStart: [{ type: "command", command: hookCommand(platform) }] } }, null, 2) + "\n";
+
 // The copy has every file a session reads, each as a file: the manifest, each
 // skill, the hook file agy runs and the scripts under hooks/, and each agent.
 const isFile = (file) => statSync(file, { throwIfNoEntry: false })?.isFile() === true;
-const HOOK_FILES = ["hooks.json", "hooks/session-start.sh", "hooks/session-start-context.md", "skills/setup-pstack/scripts/read-sheet.sh"];
-const intact = (dir, { pluginRoot, skills }) =>
+const HOOK_FILES = ["hooks/session-start.sh", "hooks/session-start.ps1", "hooks/session-start-context.md", "skills/setup-pstack/scripts/read-sheet.sh"];
+const intact = (dir, { pluginRoot, skills, platform = process.platform }) =>
   pluginIntact(dir, ANTIGRAVITY_MANIFEST, skills) &&
   HOOK_FILES.every((file) => isFile(join(dir, file)) && readFileSync(join(dir, file)).equals(readFileSync(join(pluginRoot, file)))) &&
+  isFile(join(dir, "hooks.json")) && readFileSync(join(dir, "hooks.json"), "utf8") === hooksFile(platform) &&
   ["hooks", "agents"].every((sub) => readdirSync(join(pluginRoot, sub)).every((file) => isFile(join(dir, sub, file))));
 
 // The canonical copy, swapped in whole by rename, so a session never loads
 // half a plugin and files a release dropped do not linger.
 function installCanonical(dir, context) {
-  const { pluginRoot, version } = context;
+  const { pluginRoot, version, platform = process.platform } = context;
   const was = canonicalState(dir);
   if (was === "foreign") throw new Error(`${dir} is not t3-pstack's; move it aside`);
   const before = installedVersion(dir);
@@ -148,6 +159,7 @@ function installCanonical(dir, context) {
   const old = was === "ours" ? tempBeside(dir) : undefined;
   try {
     cpSync(pluginRoot, fresh, { recursive: true });
+    writeFileSync(join(fresh, "hooks.json"), hooksFile(platform));
     if (was === "link") unlinkSync(dir);
     if (old) renameSync(dir, old);
     renameSync(fresh, dir);

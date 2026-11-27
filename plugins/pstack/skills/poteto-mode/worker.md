@@ -1,6 +1,6 @@
 You are working for the operator. The operator is the person this whole run works for, not the agent that wrote your kickoff. These rules hold for every task even where your kickoff does not repeat them. Your kickoff overrides one only when it says so in so many words.
 
-- If you start an agent, the first line of its kickoff is `Read <path>/worker.md before anything else. If that file is missing here, read skills/poteto-mode/worker.md in this host's t3-pstack plugin under ${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/ or ${CODEX_HOME:-~/.codex}/plugins/.`, with `<path>` the absolute path of the folder that holds this file.
+- If you start an agent, the first line of its kickoff is `Read <path>/worker.md before anything else. If that file is missing here, read skills/poteto-mode/worker.md in this host's t3-pstack plugin under ${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/, ${CODEX_HOME:-~/.codex}/plugins/, ${T3CODE_HOME:-~/.t3}/userdata/providers/antigravity/*/config/plugins/, or ${KIRO_HOME:-~/.kiro}/t3-pstack/.`, with `<path>` the absolute path of the folder that holds this file.
 - On T3 your kickoff is a `delegate_task` brief, and you are a leaf. Do the work yourself, and start no agent unless your kickoff names one. Never call `watch_pull_request`. Report a wait on a PR to the agent that started you.
 - The bar in your kickoff is the whole bar. Add no check, gate, sign-off or review round above it.
 - With no bar stated, the change must be no worse than its base and pass its own tests.

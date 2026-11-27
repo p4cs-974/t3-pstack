@@ -2,7 +2,8 @@
 // so since 2.0.0-rc.3 there is one sheet per machine, at
 // `${XDG_CONFIG_HOME:-~/.config}/t3-pstack/models.md`. Released versions read
 // `t3-pstack-models.md` in each config home, so the installer moves that sheet
-// to the machine path once and leaves a symlink at each home's old path.
+// to the machine path once and leaves a symlink at each home's old path, or a
+// copy where the system refuses a symlink.
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, symlinkSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -20,11 +21,24 @@ const sameBytes = (a, b) => readFileSync(a).equals(readFileSync(b));
 const resolvesTo = (path, target) => isFile(path) && isFile(target) && realpathSync(path) === realpathSync(target);
 const homeSheets = (homes) => homes.map((home) => join(home.dir, HOME_SHEET));
 
+// Windows makes a symlink only in Developer Mode or an elevated shell, and
+// fails with EPERM otherwise. There `path` gets a copy of `target`, unless it
+// already holds the same bytes, and doctor warns that the copy won't follow
+// later edits. Returns what changed.
 function link(target, path) {
   const tmp = tempBeside(path);
-  symlinkSync(target, tmp);
+  try {
+    symlinkSync(target, tmp);
+  } catch (err) {
+    if (err.code !== "EPERM") throw err;
+    if (isFile(path) && sameBytes(path, target)) return undefined;
+    writeAtomic(path, readFileSync(target), target);
+    return "copied";
+  }
   renameSync(tmp, path);
+  return "linked";
 }
+const REFUSED = "since this system refused a symlink";
 
 // A sheet a home links to from outside every home, such as one kept in a
 // dotfiles repository, is the user's file to keep.
@@ -44,8 +58,7 @@ export function moveSheet(sheet, homes) {
     mkdirSync(dirname(sheet), { recursive: true });
     const kept = found.find((path) => outsideHomes(path, homes));
     if (kept) {
-      link(kept, sheet);
-      steps.push(`linked the sheet to ${kept}`);
+      steps.push(link(kept, sheet) === "linked" ? `linked the sheet to ${kept}` : `copied the sheet from ${kept}, ${REFUSED}`);
     } else {
       writeAtomic(sheet, readFileSync(found[0]), found[0]);
       steps.push(`moved the sheet from ${found[0]}`);
@@ -57,8 +70,8 @@ export function moveSheet(sheet, homes) {
     if (!existsSync(dirname(path)) || resolvesTo(path, sheet)) continue;
     const present = lstatSync(path, { throwIfNoEntry: false });
     if (present && isFile(path) && (present.isSymbolicLink() || !sameBytes(path, sheet))) continue;
-    link(sheet, path);
-    steps.push(`linked ${path} to it`);
+    const done = link(sheet, path);
+    if (done) steps.push(done === "linked" ? `linked ${path} to it` : `copied it to ${path}, ${REFUSED}`);
   }
   return steps;
 }
@@ -85,6 +98,7 @@ export function doctorSheet(sheet, homes, { catalog, roles, tiers, retired = [],
   // drops it on its next run.
   const stale = [...new Set(lines.map(({ key }) => key).filter((key) => retired.includes(key)))];
   const shadowing = old.filter((path) => !resolvesTo(path, sheet) && !sameBytes(path, sheet));
+  const copies = old.filter((path) => !lstatSync(path).isSymbolicLink() && !resolvesTo(path, sheet) && sameBytes(path, sheet));
   return [
     check(
       "machine sheet valid",
@@ -102,6 +116,9 @@ export function doctorSheet(sheet, homes, { catalog, roles, tiers, retired = [],
       shadowing.length ? `${shadowing.join(", ")} differ from the machine sheet` : "none differ from it",
       `move each aside, then ${hint} to link it`,
     ),
+    ...(copies.length
+      ? [check("home sheet copies", false, `${copies.join(", ")} copy it and won't follow later edits to it`, `${hint} to link each; on Windows, turn on Developer Mode first`, true)]
+      : []),
     ...(stale.length
       ? [check("retired roles", false, `no skill reads ${stale.map((key) => `"${key}"`).join(", ")}`, `${SETUP_HINT}, which drops them`, true)]
       : []),

@@ -1,10 +1,13 @@
 {
-  "t3-pstack": {
-    "SessionStart": [
-      {
-        "type": "command",
-        "command": "sh ./hooks/session-start.sh antigravity"
-      }
-    ]
-  }
+  "SessionStart": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\" devin"
+        }
+      ]
+    }
+  ]
 }

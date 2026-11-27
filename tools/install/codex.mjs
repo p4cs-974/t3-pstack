@@ -22,7 +22,6 @@ import {
   check,
   codexSource,
   installHint,
-  isPlainCopy,
   launch,
   MARKETPLACE,
   marketplaceCheck,
@@ -30,6 +29,8 @@ import {
   PLUGIN_ID,
   pluginIntact,
   runCli,
+  sameNameCheck,
+  sameNameSkill,
   trustedOnly,
   updated,
 } from "./common.mjs";
@@ -318,7 +319,10 @@ export async function doctorCodex(home, { source, trusted, version, skills, code
     const hooks = await pluginHooks(server);
     const warnings = hooks.length ? [] : await pluginHookWarnings(server, home.dir);
     const listed = (await server.request("skills/list", { cwds: [neutralCwd()] })).data.flatMap((entry) => entry.skills);
-    const plain = listed.filter((skill) => isPlainCopy(skill.name, skill.path, skills)).map((skill) => skill.path);
+    const named = listed.map((skill) => ({ path: skill.path, kind: sameNameSkill(skill.name, skill.path, skills) }));
+    const plain = named.filter((s) => s.kind === "copy").map((s) => s.path);
+    const others = named.filter((s) => s.kind === "other").map((s) => s.path);
+    const few = (paths) => paths.slice(0, 5).join(", ") + (paths.length > 5 ? ` and ${paths.length - 5} more` : "");
     const installed = state.versions.join(", ");
     const good = (h) => h.trustStatus === "trusted" && isPinned(h, codexHook);
     return [
@@ -350,9 +354,10 @@ export async function doctorCodex(home, { source, trusted, version, skills, code
       check(
         "no plain copies of plugin skills",
         plain.length === 0,
-        plain.length ? plain.slice(0, 5).join(", ") + (plain.length > 5 ? ` and ${plain.length - 5} more` : "") : "none",
+        plain.length ? few(plain) : "none",
         "delete these copies, for example from ~/.agents/skills; the plugin ships the same skills",
       ),
+      ...(others.length ? [sameNameCheck(few(others), "Codex")] : []),
     ];
   });
 }

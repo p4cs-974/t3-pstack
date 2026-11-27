@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { agentSkills } from "../tools/generate.mjs";
+import { hooksFile as antigravityHooksFile } from "../tools/install/antigravity.mjs";
 import { hookCommand as kiroHookCommand } from "../tools/install/kiro.mjs";
 import { sheetCases, writeSheet } from "./session-hook-sheets.mjs";
 
@@ -17,19 +18,22 @@ const mandate = readFileSync(join(pluginRoot, "hooks/session-start-context.md"),
 const codexManifest = JSON.parse(readFileSync(join(pluginRoot, ".codex-plugin/plugin.json"), "utf8"));
 
 // Claude Code loads hooks/hooks.json by convention; Codex loads the file its
-// manifest names; Antigravity loads hooks.json at the plugin root; Kiro loads
-// the hooks file the installer writes into its home.
+// manifest names; Devin loads hooks.json at the plugin root; Antigravity loads
+// the hooks.json the installer writes at its copy's root; Kiro loads the hooks
+// file the installer writes into its home.
 const sessionStart = Object.fromEntries(
   Object.entries({ claude: "hooks/hooks.json", codex: codexManifest.hooks }).map(([runtime, file]) => [
     runtime,
     JSON.parse(readFileSync(join(pluginRoot, file), "utf8")).hooks.SessionStart[0],
   ]),
 );
-const antigravityHooks = JSON.parse(readFileSync(join(pluginRoot, "hooks.json"), "utf8"))["t3-pstack"].SessionStart;
+const devinHooks = JSON.parse(readFileSync(join(pluginRoot, "hooks.json"), "utf8"));
+const antigravityHooks = (platform) => JSON.parse(antigravityHooksFile(platform))["t3-pstack"].SessionStart;
 const commands = {
   claude: sessionStart.claude.hooks[0].command,
   codex: sessionStart.codex.hooks[0].command,
-  antigravity: antigravityHooks[0].command,
+  antigravity: antigravityHooks("linux")[0].command,
+  devin: devinHooks.SessionStart?.[0].hooks[0].command,
   kiro: kiroHookCommand(pluginRoot),
 };
 
@@ -38,6 +42,13 @@ const decodeAntigravity = (out) => {
   const steps = JSON.parse(out).injectSteps;
   expect(steps).toHaveLength(1);
   return steps[0].systemMessage.systemMessage;
+};
+
+// Devin injects SessionStart context only from this JSON.
+const decodeDevin = (out) => {
+  const reply = JSON.parse(out);
+  expect(reply).toEqual({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: expect.any(String) } });
+  return reply.hookSpecificOutput.additionalContext;
 };
 
 const decodeKiro = (out) => {
@@ -73,6 +84,16 @@ const runtimes = {
     sheetFile: "models.md",
     env: () => ({ PLUGIN_ROOT: pluginRoot }),
     reply: decodeAntigravity,
+    silent: "{}\n",
+  },
+  // Devin exports CLAUDE_PLUGIN_ROOT. It has no home sheet, so its cases use
+  // the machine sheet.
+  devin: {
+    hooks: "devin",
+    sheetDir: ".config/t3-pstack",
+    sheetFile: "models.md",
+    env: () => ({}),
+    reply: decodeDevin,
     silent: "{}\n",
   },
   // Kiro names no plugin root, so the hook must use the one its command passes.
@@ -126,7 +147,7 @@ describe("SessionStart hook", () => {
       const r = runHook("claude", null, `"\${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh" ${arg}`);
       expect(r.status).not.toBe(0);
       expect(r.out).toBe("");
-      expect(r.err.trimEnd().split("\n")).toEqual([`session-start.sh: unknown runtime '${arg}' (expected claude, codex, antigravity, or kiro)`]);
+      expect(r.err.trimEnd().split("\n")).toEqual([`session-start.sh: unknown runtime '${arg}' (expected claude, codex, antigravity, devin, or kiro)`]);
     });
   }
 
@@ -165,8 +186,21 @@ describe("the machine sheet", () => {
     }).stdout;
 
   test("Antigravity loads its one SessionStart hook with no timeout of its own", () => {
-    expect(Object.keys(JSON.parse(readFileSync(join(pluginRoot, "hooks.json"), "utf8")))).toEqual(["t3-pstack"]);
-    expect(antigravityHooks).toEqual([{ type: "command", command: "sh ./hooks/session-start.sh antigravity" }]);
+    expect(antigravityHooks("linux")).toEqual([{ type: "command", command: "sh ./hooks/session-start.sh antigravity" }]);
+  });
+
+  // session-start.ps1 writes these bytes on Windows too.
+  test("Antigravity's reply is the context as one JSON string", () => {
+    const reply = `{"injectSteps":[{"systemMessage":{"systemMessage":${JSON.stringify(mandate)}}}]}\n`;
+    expect(runHook("antigravity", null)).toEqual({ status: 0, out: reply, err: "" });
+  });
+
+  // Devin fires a SessionStart hook whose matcher is empty, and not one with
+  // Claude Code's matcher (#87).
+  test("Devin loads its one SessionStart hook from the plugin root, with an empty matcher", () => {
+    expect(devinHooks).toEqual({
+      SessionStart: [{ matcher: "", hooks: [{ type: "command", command: '"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh" devin' }] }],
+    });
   });
 
   test.each(["claude", "codex"])("decides over the %s home sheet", (runtime) => {
@@ -186,18 +220,18 @@ describe("the machine sheet", () => {
     }
   });
 
-  test("moves with XDG_CONFIG_HOME on antigravity", () => {
+  test.each(["antigravity", "devin"])("moves with XDG_CONFIG_HOME on %s", (runtime) => {
     const home = mkdtempSync(join(tmpdir(), "pstack-hook-"));
     const run = (env = {}) =>
-      spawnSync("sh", ["-c", commands.antigravity], {
+      spawnSync("sh", ["-c", commands[runtime]], {
         cwd: pluginRoot,
-        env: { PATH: process.env.PATH, HOME: home, PLUGIN_ROOT: pluginRoot, ...env },
+        env: { PATH: process.env.PATH, HOME: home, PLUGIN_ROOT: pluginRoot, CLAUDE_PLUGIN_ROOT: pluginRoot, ...env },
         encoding: "utf8",
       }).stdout;
     try {
       mkdirSync(join(home, "xdg/t3-pstack"), { recursive: true });
       writeFileSync(join(home, "xdg/t3-pstack/models.md"), "session hook: off\n");
-      expect(decodeAntigravity(run())).toBe(mandate);
+      expect(runtimes[runtime].reply(run())).toBe(mandate);
       expect(run({ XDG_CONFIG_HOME: join(home, "xdg") })).toBe("{}\n");
     } finally {
       rmSync(home, { recursive: true, force: true });

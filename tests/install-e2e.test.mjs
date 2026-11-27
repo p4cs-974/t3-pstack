@@ -284,16 +284,19 @@ describe.skipIf(!enabled)("the installer, end to end", () => {
     expect(status).toBe(0);
   }, 300_000);
 
-  test("doctor flags a plain copy of a plugin skill, not a user's own skill that shares a name", () => {
+  test("doctor fails a plain copy of a plugin skill, and only warns on a user's own skill that shares a name", () => {
     mkdirSync(join(home, ".agents/skills/how"), { recursive: true });
     mkdirSync(join(home, ".agents/skills/why"), { recursive: true });
     writeFileSync(join(home, ".agents/skills/how/SKILL.md"), "---\nname: how\ndescription: My own notes on how things work.\n---\n");
     cpSync(join(repoRoot, "plugins/pstack/skills/why/SKILL.md"), join(home, ".agents/skills/why/SKILL.md"));
     const { status, report } = installer("doctor");
+    const warned = (checks) => checks.filter((c) => c.warn).map((c) => `${c.name}: ${c.detail}`);
     expect(failing(row(report, ".codex").checks)).toEqual([`no plain copies of plugin skills: ${join(home, ".agents/skills/why/SKILL.md")}`]);
+    expect(warned(row(report, ".codex").checks)).toEqual([`same-name skills: ${join(home, ".agents/skills/how/SKILL.md")} share a plugin skill's name, not its SKILL.md`]);
     expect(status).toBe(1);
     rmSync(join(home, ".agents/skills/why"), { recursive: true });
     expect(installer("doctor").status).toBe(0);
+    rmSync(join(home, ".agents/skills/how"), { recursive: true });
   }, 300_000);
 
   test("a poteto-mode script leaves the installed plugin as released, so the hook still routes", async () => {

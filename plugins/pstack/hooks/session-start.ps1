@@ -1,13 +1,17 @@
+# Codex's hooks file passes no runtime. Antigravity's, which the installer
+# writes on Windows, passes `antigravity`.
+param([ValidateSet('codex', 'antigravity')] [string] $Runtime = 'codex')
 $ErrorActionPreference = 'Stop'
 
 # One sheet per machine. Until the installer moves an older home's sheet
-# there, that home's sheet still counts.
+# there, that home's sheet still counts. No released version read a sheet in
+# an Antigravity home.
 $configRoot = $env:XDG_CONFIG_HOME
 if (-not $configRoot) {
     $configRoot = Join-Path $env:USERPROFILE '.config'
 }
 $sheet = Join-Path $configRoot 't3-pstack\models.md'
-if (-not (Test-Path -LiteralPath $sheet -PathType Leaf)) {
+if ($Runtime -eq 'codex' -and -not (Test-Path -LiteralPath $sheet -PathType Leaf)) {
     $sheetRoot = $env:CODEX_HOME
     if (-not $sheetRoot) {
         $sheetRoot = Join-Path $env:USERPROFILE '.codex'
@@ -26,8 +30,18 @@ if (Test-Path -LiteralPath $sheet -PathType Leaf) {
     } catch { }
 }
 if ($off) {
+    if ($Runtime -eq 'antigravity') {
+        [Console]::Write("{}`n")
+    }
     exit 0
 }
 
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
-[Console]::Write([System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'session-start-context.md'), [System.Text.Encoding]::UTF8))
+$context = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'session-start-context.md'), [System.Text.Encoding]::UTF8)
+if ($Runtime -eq 'antigravity') {
+    # Antigravity reads a JSON reply and injects each step's text as a system
+    # message. Escaped as session-start.sh escapes it, so both write the same bytes.
+    $text = $context.Replace('\', '\\').Replace('"', '\"').Replace("`t", '\t').Replace("`r", '\r').Replace("`n", '\n')
+    $context = '{"injectSteps":[{"systemMessage":{"systemMessage":"' + $text + '"}}]}' + "`n"
+}
+[Console]::Write($context)

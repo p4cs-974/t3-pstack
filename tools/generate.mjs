@@ -21,7 +21,8 @@
 // Also validated: skill frontmatter, the skills tree's links,
 // the plugin layout, agent frontmatter, the Codex marketplace, the Claude Code
 // and Codex hooks files against their pins in tools/frozen-hooks.json, and
-// the Antigravity hooks file.
+// Devin's hooks file. tests/runtime-packaging.test.mjs checks the Antigravity
+// hooks file the installer writes with validateAntigravityHooks.
 
 import { execFileSync } from "node:child_process";
 import {
@@ -51,8 +52,9 @@ export { parseFrontmatter };
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const CODEX_MANIFEST = `${PLUGIN}/.codex-plugin/plugin.json`;
-// Antigravity loads hooks only from hooks.json at the plugin root.
-const ANTIGRAVITY_HOOKS = "hooks.json";
+// Devin loads a plugin's hooks from hooks.json at its root. Antigravity loads
+// the same path, so the installer writes Antigravity's file into each copy.
+const DEVIN_HOOKS = "hooks.json";
 const VERSIONED_MANIFESTS = [
   ".claude-plugin/marketplace.json",
   `${PLUGIN}/.claude-plugin/plugin.json`,
@@ -410,9 +412,9 @@ export function validateHooks(hooksJson, { statOf, file = "hooks/hooks.json", ro
 }
 
 // Antigravity's hooks file maps each hook's name to its events, and runs each
-// command with `sh -c` in the plugin root, so the script a command hands to
-// `sh` must exist in the plugin. Antigravity trusts no hook by hash, so the
-// file has no pin.
+// command in the plugin root, so the script a command hands to `sh` or
+// PowerShell must exist in the plugin. Antigravity trusts no hook by hash, so
+// the file has no pin.
 const ANTIGRAVITY_HANDLER = Type.Object(
   { type: Type.Optional(Type.Literal("command")), command: Type.String({ minLength: 1 }), timeout: Type.Optional(Type.Integer({ minimum: 1 })) },
   { additionalProperties: false },
@@ -422,13 +424,13 @@ const ANTIGRAVITY_HOOKS_FILE = Type.Record(
   Type.Object({ enabled: Type.Optional(Type.Boolean()), SessionStart: Type.Array(ANTIGRAVITY_HANDLER) }, { additionalProperties: false }),
 );
 
-export function validateAntigravityHooks(hooksJson, { statOf, file = ANTIGRAVITY_HOOKS }) {
+export function validateAntigravityHooks(hooksJson, { statOf, file = "hooks.json" }) {
   const raw = JSON.parse(hooksJson);
   const faults = shapeFaults(ANTIGRAVITY_HOOKS_FILE, raw, "file");
   for (const [name, spec] of faults.length ? [] : Object.entries(raw)) {
     for (const { command } of spec.SessionStart) {
-      const script = command.match(/^sh \.\/(\S+)/)?.[1];
-      if (!script) faults.push(`${name}: command does not run a plugin script with sh ./<path>: ${command}`);
+      const script = command.match(/^(?:sh|powershell\.exe .*-File) \.\/(\S+)/)?.[1];
+      if (!script) faults.push(`${name}: command does not run a plugin script with sh ./<path> or powershell.exe -File ./<path>: ${command}`);
       else if (!statOf(script)) faults.push(`${name}: ${script} does not exist in the plugin`);
     }
   }
@@ -604,7 +606,9 @@ export function problems(root, models) {
   for (const file of hookFiles) {
     attempt(() => validateHooks(readFileSync(join(pluginRoot, file), "utf8"), { statOf, file }));
   }
-  attempt(() => validateAntigravityHooks(readFileSync(join(pluginRoot, ANTIGRAVITY_HOOKS), "utf8"), { statOf }));
+  // Devin's file holds the events Claude Code's nests under "hooks". Devin's
+  // plugin docs describe no hook trust by hash, so the file has no pin.
+  attempt(() => validateHooks(JSON.stringify({ hooks: JSON.parse(read(`${PLUGIN}/${DEVIN_HOOKS}`)) }), { statOf, file: DEVIN_HOOKS }));
   // A Codex manifest that does not parse names no hooks file to compare.
   if (codex) attempt(() => {
     const paths = hookFiles.map((file) => `${PLUGIN}/${file}`);

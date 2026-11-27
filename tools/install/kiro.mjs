@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 
-import { check, isPlainCopy, readJson, tempBeside } from "./common.mjs";
+import { check, readJson, sameNameSkill, tempBeside } from "./common.mjs";
 import { INSTALL_RECORD } from "../plugin.mjs";
 
 const SESSION_START_FILES = ["hooks/session-start.sh", "hooks/session-start-context.md", "skills/setup-pstack/scripts/read-sheet.sh"];
@@ -45,7 +45,7 @@ const inside = (path, dir) => path.startsWith(dir + sep);
 function classify(path, name, root, skills) {
   const stat = lstatSync(path, { throwIfNoEntry: false });
   if (!stat) return { kind: "missing" };
-  if (!stat.isSymbolicLink()) return { kind: isPlainCopy(name, join(path, "SKILL.md"), skills) ? "copy" : "own" };
+  if (!stat.isSymbolicLink()) return { kind: sameNameSkill(name, join(path, "SKILL.md"), skills) === "copy" ? "copy" : "own" };
   const linked = resolve(dirname(path), readlinkSync(path));
   return { kind: inside(linked, root) || inside(real(path), real(root)) ? "ours" : "link", linked };
 }

@@ -2,6 +2,78 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-T3 rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 2.8.0 - Devin runs the session-start hook, and Antigravity runs it on Windows
+
+@whyyagswhy found in [#87](https://github.com/chhoumann/t3-pstack/issues/87) why the session-start hook never ran in the Devin CLI. Devin reads a plugin's hooks from `hooks.json` at the plugin root, and that file was Antigravity's. Devin could not parse it, so it loaded the plugin without its hooks. @Sebastian85 reported in [#94](https://github.com/chhoumann/t3-pstack/issues/94) (item 2) that Antigravity's session-start hook did not run on native Windows, because the file ran it under `sh`. Both come from that one file, so this release fixes them together. Thanks to @whyyagswhy for the diagnosis and the Devin format that worked, and to @Sebastian85 for the report.
+
+**The plugin root's `hooks.json` is now Devin's.** It holds one SessionStart hook in Devin's format, with an empty matcher. @whyyagswhy found that Claude Code's `startup|resume|clear|compact` matcher did not fire in Devin and an empty one did. The hook runs `session-start.sh devin`, which wraps the routing text in the JSON Devin injects SessionStart context from: `{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"..."}}`. `session hook: off` in the model sheet turns it off, as on every host, and the script then prints `{}`. Devin reads only the machine sheet, since no release read a sheet in a Devin home. The installer does not install into Devin.
+
+**The installer writes Antigravity's `hooks.json`.** Antigravity loads a plugin's hooks from that same path. The installer now writes the file into each Antigravity profile's copy, for the platform it runs on. On macOS and Linux the hook runs `sh ./hooks/session-start.sh antigravity`, and the file is byte for byte the one 2.7.2 shipped. Antigravity's hooks file has no Windows-specific command, and Antigravity runs each command with `cmd /c` on Windows. So on Windows the hook runs `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./hooks/session-start.ps1 antigravity`, the same PowerShell call Codex's hooks file makes there. `session-start.ps1` gains an `antigravity` runtime. It writes the bytes `session-start.sh` writes, reads only the machine sheet, and prints `{}` when the sheet turns the hook off. Run with no runtime, as Codex's hooks file runs it, the script does what it did before. `update` replaces a copy whose `hooks.json` differs from the one it writes, and `doctor` fails such a copy as changed.
+
+| Change | 2.7.2 | 2.8.0 | Issue |
+| --- | --- | --- | --- |
+| Devin CLI session start | Drops every pstack hook, since it cannot parse the root `hooks.json`. | Injects the routing text. | #87 |
+| Antigravity session start on Windows | Runs `sh`, so no routing text. | Runs `session-start.ps1` under Windows PowerShell. | #94, item 2 |
+| Antigravity session start on macOS and Linux | Runs `session-start.sh`. | The same hooks file and command. | |
+
+**What stays the same.** Claude Code reads `hooks/hooks.json` and Codex reads `hooks/codex-hooks.json`. Neither file changes, and both pins in `tools/frozen-hooks.json` stay. Kiro's hooks file, which the installer writes into each Kiro home, does not change either.
+
+**How the port carries it.** Every changed file is port-only: the hooks files and scripts, the installer, the generator, and the tests. The generator now checks the root `hooks.json` as Devin's file, which holds the events Claude Code's file nests under `"hooks"`. `tests/runtime-packaging.test.mjs` checks the hooks file the installer writes for Antigravity on each platform, so the generator, which the sync tool imports, does not import the installer.
+
+This is a port release. It syncs nothing from Lauren's pstack, so all three components stay pinned at cursor/plugins `9e278fe`, pstack 0.15.48. It is a minor release, since it adds Devin's session-start hook. Run `npx -y github:chhoumann/t3-pstack update` after it, as after every release, so Codex trusts the hook again and each Antigravity profile gets the new hooks file.
+
+**Verification.**
+
+On macOS 27.0:
+
+- `bun tools/generate.mjs --check` reports 14 generated files current. `GIT_CONFIG_GLOBAL=/dev/null bun test tests/ --timeout 30000` passes 622, skips 84, and fails 0. The installer's end-to-end test passes 21 of 21 with Claude Code 2.1.332, Codex 0.172.0, and Kiro, and Claude Code's and Codex's session-start hooks still route there. `validate-skills` keeps every local link inside the skills tree.
+- The new tests fail against 2.7.2's code. The two Windows installer tests get `sh ./hooks/session-start.sh antigravity` where they expect the `powershell.exe` command. With 2.7.2's root `hooks.json`, all 21 Devin tests in `tests/session-hook.test.mjs` fail, since the file names no Devin command. With 2.7.2's `session-start.sh`, 20 of them fail with `unknown runtime 'devin'`.
+- `install` ran 2.7.2's installer, then this one, in a throwaway `HOME` whose T3 settings name one Antigravity instance. The update reported `updated 2.7.2 to 2.8.0`, a second run changed nothing, and `doctor` passed. The copy's `hooks.json` runs `sh ./hooks/session-start.sh antigravity`. That command, run in the copy as Antigravity runs it, printed valid JSON with one system message, the copy's routing text.
+- PowerShell 7.4.2, in a Linux container under emulation, ran `session-start.ps1 antigravity`. It wrote the same 1926 bytes as `session-start.sh antigravity`, and `{}` with the hook turned off. With no runtime it wrote the context file unchanged. 2.7.2's script wrote plain Markdown for `antigravity`.
+- The dry run of each component at `9e278fe` exits 0: pstack leaves 501 files unchanged with 16 declared forks and 630 changed lines, as on 2.7.2, cursor-team-kit leaves 6 unchanged, and thermos leaves 5 unchanged.
+- shellcheck 0.11.0, actionlint 1.7.12, markdownlint-cli2 0.18.1, and lychee 0.24.2's offline link check pass.
+
+No run here was on Windows or in Devin. CI's Windows job runs the new Antigravity cases in `tests/session-hook-windows.test.mjs` through `cmd.exe` and Windows PowerShell. No Devin CLI on this Mac loads plugins, so Devin's hook was tested only at the script and JSON level.
+
+## 2.7.2 - The installer reads PowerShell's JSON and works without symlinks, doctor warns on stale skill copies, and worker.md finds the Antigravity copy
+
+@Sebastian85 runs t3-pstack on Windows 11 with T3 Code 0.1.12, with Claude Code, Codex, and Antigravity children, and reported six gaps in [#94](https://github.com/chhoumann/t3-pstack/issues/94). This release fixes items 3 to 6. Items 1 and 2 are not in it: an Antigravity child that ends its turn while a command it moved to the background still runs, and Antigravity's session-start hook, which does not run on native Windows. #94 stays open for them. Thanks to @Sebastian85 for the report.
+
+**worker.md names every host's copy (item 3).** A `delegate_task` child whose parent's `worker.md` path does not exist on its own host reads its own host's copy instead. The kickoff line named only `${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/` and `${CODEX_HOME:-~/.codex}/plugins/`, so a child on Antigravity had nowhere to look. It now also names `${T3CODE_HOME:-~/.t3}/userdata/providers/antigravity/*/config/plugins/`, where the installer copies the plugin into each Antigravity profile, and `${KIRO_HOME:-~/.kiro}/t3-pstack/`, Kiro's copy, which the same sentence also lacked. poteto-agent's search list gains the Antigravity profile beside Kiro's.
+
+**The installer reads JSON that starts with a byte-order mark (item 4).** PowerShell writes UTF-8 with a byte-order mark, and `JSON.parse` rejects it. An Antigravity profile's `config/config.json` written that way made `install`, `update`, and `doctor` fail the profile with `<path>: invalid JSON` and exit 1. A T3 `settings.json` written that way read as invalid JSON, so the installer found no T3 instance and still exited 0. Every JSON file the installer reads now drops a leading mark first.
+
+**The model sheet without symlinks (item 5).** Windows makes a symlink only in Developer Mode or an elevated shell. Elsewhere, linking a home's `t3-pstack-models.md` to the machine sheet failed with `EPERM: operation not permitted, symlink`, so `install` failed, linked no later home, and failed the same way on every rerun. On `EPERM` the home now gets a copy of the machine sheet, written atomically, and a rerun leaves a copy that already matches. `doctor` warns, without failing, that each copy won't follow later edits to the machine sheet. Once the machine sheet changes, the copy differs, and the existing `home sheets` check fails it with its move-aside fix, as it fails any home sheet that differs. Current releases read a home's sheet only when the machine sheet is missing.
+
+**doctor warns on stale same-name skills (item 6).** Claude Code and Codex load a skill in `~/.claude/skills` or `~/.agents/skills` beside the plugin's skill of the same name. `doctor` failed only a byte-identical copy, so an older copy, or one in upstream's Cursor form, passed `no plain copies of plugin skills` while the host loaded both. A new `same-name skills` check now warns, without failing, on each skill outside the plugin that shares a plugin skill's name but not its `SKILL.md`, and says to delete an old copy or rename the user's own skill. A user's own skill of the same name still never fails the run. The plain-copy check compares line ends as LF, so a copy with CRLF line ends still fails it. Kiro, which has no skill namespace, already failed every same-name skill and does as before.
+
+| Change | 2.7.1 | 2.7.2 | #94 item |
+| --- | --- | --- | --- |
+| `worker.md` fallback on Antigravity or Kiro | Names only the Claude Code and Codex plugin directories. | Names the Antigravity profile's copy and Kiro's too. | 3 |
+| Antigravity `config.json` with a byte-order mark | `install` and `doctor` fail it as invalid JSON. | Read as JSON. | 4 |
+| T3 `settings.json` with a byte-order mark | Every T3 instance is skipped, and the run passes. | Read as JSON. | 4 |
+| A home sheet where a symlink fails with `EPERM` | `install` fails and links no later home, on every run. | The home gets a copy, and `doctor` warns. | 5 |
+| A same-name skill whose `SKILL.md` differs | Passes. | `doctor` warns. | 6 |
+| A plain copy with CRLF line ends | Passes. | Fails `no plain copies of plugin skills`. | 6 |
+
+**How the port carries it.** Item 3 is two rules in `tools/substitutions.json`, the `worker.md` pointer and poteto-agent's search list. `bun tools/sync.mjs pstack 9e278fe --bootstrap` regenerated `worker.md` and `poteto-agent.md` from them, and poteto-mode's `SKILL.md`, a declared fork, carries the same text, so its own lines still differ from derived upstream by the 7 it declares. Items 4 to 6 change the installer in `tools/install/`.
+
+This is a port release. It syncs nothing from Lauren's pstack, so all three components stay pinned at cursor/plugins `9e278fe`, pstack 0.15.48. It is a patch release, since it fixes the installer and two sentences and adds no skill, capability, or harness. No user has to act, and neither hooks file changes. Run `npx -y github:chhoumann/t3-pstack update` after it, as after every release, so Codex trusts the hook again and each Antigravity profile and Kiro home gets the new `worker.md`.
+
+**Verification.**
+
+On macOS 27.0:
+
+- `bun tools/generate.mjs --check` reports 14 generated files current. `GIT_CONFIG_GLOBAL=/dev/null bun test tests/ --timeout 30000` passes 594, skips 63, and fails 0. The installer's end-to-end test passes 21 of 21 with Claude Code 2.1.332 and Codex 0.172.0. `validate-skills` keeps every local link inside the skills tree.
+- Each new or changed test fails against 2.7.1 and passes here: the three "keeps its T3 insert" entries in `tests/sync.test.mjs`, which find no Antigravity path, the two byte-order-mark tests in `tests/install.test.mjs`, which fail with `invalid JSON`, the sheet test, which fails with `EPERM: operation not permitted, symlink`, and the two same-name tests, which find no warning and no failing CRLF copy. On 2.7.1 the end-to-end same-name case finds no warning, and a later case then fails on the plain copy that the aborted case left in place.
+- `install` and `doctor` ran in a throwaway `HOME` with no `claude` or `codex` on `PATH`. With a byte-order mark only in the Antigravity profile's `config.json`, 2.7.1 fails the profile with `config.json: invalid JSON` and exits 1, and 2.7.2 installs it and exits 0. With a byte-order mark in T3's `settings.json` as well, 2.7.1 reports `invalid JSON`, lists no Antigravity profile, and exits 0, and 2.7.2 installs into the profile. In the profile 2.7.2 installs, the shell glob `~/.t3/userdata/providers/antigravity/*/config/plugins/t3-pstack/skills/poteto-mode/worker.md` finds the copy, which names that path.
+- The dry run of each component at `9e278fe` exits 0: pstack leaves 501 files unchanged with 16 declared forks and 630 changed lines, as on 2.7.1, cursor-team-kit leaves 6 unchanged, and thermos leaves 5 unchanged.
+- The vendored scripts typecheck, `bun test watch-pr` passes 106 of 106, and Prettier passes on the port's own TypeScript.
+- The skill script tests, on Node 26.13.1 without TLC, pass 303, skip 70, and fail only the launcher symlink test under `/var`, as 2.5.2 recorded. With a physical `TMPDIR` they pass 304, skip 70, and fail 0.
+- shellcheck, actionlint 1.7.12, markdownlint-cli2 0.18.1, and lychee 0.24.2's offline link check pass.
+
+No run was on Windows. The sheet test forces `symlinkSync` to throw `EPERM`, and `printf` wrote the byte-order marks, not PowerShell.
+
 ## 2.7.1 - /reframe lists the problems a vague description could be
 
 t3-pstack moves to Lauren Tan's pstack at cursor/plugins `9e278fe` ([pstack #1326](https://github.com/cursor/plugins/pull/1326)) for all three components, and pstack's version moves from 0.15.47 to 0.15.48. Only pstack changed upstream. cursor-team-kit and thermos have no change between `2dd5c0c` and `9e278fe`, and their pins move with pstack's.

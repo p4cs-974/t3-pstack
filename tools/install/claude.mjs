@@ -6,13 +6,14 @@ import {
   check,
   claudeSource,
   installHint,
-  isPlainCopy,
   MARKETPLACE,
   marketplaceCheck,
   PLUGIN_ID,
   pluginIntact,
   readJson,
   runCli,
+  sameNameCheck,
+  sameNameSkill,
   trustedOnly,
   updated,
   writeAtomic,
@@ -122,9 +123,12 @@ export function doctorClaude(home, { source, trusted, version, skills }) {
   const installed = state.user?.version;
   const whole = intact(state, skills);
   const skillsDir = join(home.dir, "skills");
-  const plain = existsSync(skillsDir)
-    ? readdirSync(skillsDir).filter((name) => isPlainCopy(name, join(skillsDir, name, "SKILL.md"), skills))
-    : [];
+  const named = (existsSync(skillsDir) ? readdirSync(skillsDir) : []).map((name) => ({
+    path: join(skillsDir, name),
+    kind: sameNameSkill(name, join(skillsDir, name, "SKILL.md"), skills),
+  }));
+  const plain = named.filter((s) => s.kind === "copy").map((s) => s.path);
+  const others = named.filter((s) => s.kind === "other").map((s) => s.path);
   return [
     marketplaceCheck(state.sources, { source, trusted }, `remove it with \`CLAUDE_CONFIG_DIR=${home.dir} claude plugin marketplace remove ${MARKETPLACE}\``),
     check(
@@ -150,8 +154,9 @@ export function doctorClaude(home, { source, trusted, version, skills }) {
     check(
       "no plain copies of plugin skills",
       plain.length === 0,
-      plain.length ? plain.map((name) => join(skillsDir, name)).join(", ") : "none",
+      plain.length ? plain.join(", ") : "none",
       "delete these folders; the plugin ships the same skills",
     ),
+    ...(others.length ? [sameNameCheck(others.join(", "), "Claude Code")] : []),
   ];
 }

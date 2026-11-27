@@ -206,6 +206,16 @@ describe("discoverHomes", () => {
     });
   });
 
+  test("reads T3 settings that PowerShell wrote with a UTF-8 byte-order mark", () => {
+    const t3 = tmp();
+    mkdirSync(join(t3, "userdata"), { recursive: true });
+    const settings = { providerInstances: { antigravity: { driver: "antigravity", enabled: true } } };
+    writeFileSync(join(t3, "userdata/settings.json"), `\uFEFF${JSON.stringify(settings)}\n`);
+    const found = discoverHomes({ env: { T3CODE_HOME: t3 }, home: "/home/u" });
+    expect(found.settings).toEqual({ path: join(t3, "userdata/settings.json"), instances: 1, error: undefined, secrets: [] });
+    expect(found.homes.map((h) => h.harness)).toEqual(["claude", "codex", "antigravity"]);
+  });
+
   test("falls back to the defaults when T3's settings are missing", () => {
     const t3 = tmp();
     expect(discoverHomes({ env: { T3CODE_HOME: t3 }, home: "/home/u" })).toEqual({
@@ -330,13 +340,30 @@ describe("a stale other-scope Claude Code record", () => {
     expect(doctorClaude(home, context).filter((c) => !c.ok)).toEqual([]);
   });
 
-  test("doctor leaves a user's own skill that shares a plugin skill's name", () => {
+  const SAME_NAME_FIX = "delete each old copy of a t3-pstack skill, and rename your own; Claude Code loads them beside the plugin's";
+
+  test("doctor only warns on a user's own skill that shares a plugin skill's name", () => {
     const { dir } = claudeHome({ autoUpdate: true });
     syncScopedRecords(dir);
     mkdirSync(join(dir, "skills/how"), { recursive: true });
     writeFileSync(join(dir, "skills/how/SKILL.md"), "---\nname: how\ndescription: My own notes on how things work.\n---\n");
     const home = { harness: "claude", dir, from: ["default"], bin: "claude" };
-    expect(doctorClaude(home, context).filter((c) => !c.ok)).toEqual([]);
+    expect(doctorClaude(home, context).filter((c) => !c.ok)).toEqual([
+      { name: "same-name skills", ok: false, detail: `${join(dir, "skills/how")} share a plugin skill's name, not its SKILL.md`, fix: SAME_NAME_FIX, warn: true },
+    ]);
+  });
+
+  test("doctor warns on a stale same-name copy of a plugin skill, and fails a plain copy with CRLF line ends", () => {
+    const { dir } = claudeHome({ autoUpdate: true });
+    syncScopedRecords(dir);
+    for (const name of ["how", "why"]) mkdirSync(join(dir, "skills", name), { recursive: true });
+    writeFileSync(join(dir, "skills/how/SKILL.md"), `${SKILL("how")}\nA line an older release had.\n`);
+    writeFileSync(join(dir, "skills/why/SKILL.md"), SKILL("why").replaceAll("\n", "\r\n"));
+    const home = { harness: "claude", dir, from: ["default"], bin: "claude" };
+    expect(doctorClaude(home, context).filter((c) => !c.ok)).toEqual([
+      { name: "no plain copies of plugin skills", ok: false, detail: join(dir, "skills/why"), fix: "delete these folders; the plugin ships the same skills" },
+      { name: "same-name skills", ok: false, detail: `${join(dir, "skills/how")} share a plugin skill's name, not its SKILL.md`, fix: SAME_NAME_FIX, warn: true },
+    ]);
   });
 
   test("doctor fails an install whose files are gone, and install reinstalls it", () => {
@@ -589,6 +616,40 @@ describe("the model sheet", () => {
     expect(readlinkSync(join(root, ".claude/t3-pstack-models.md"))).toBe(join(root, "dotfiles/models.md"));
   });
 
+  test("copies the sheet into each home where symlinks fail with EPERM, as on Windows without Developer Mode, and doctor warns", () => {
+    const { root, homes, sheet } = machine();
+    const [claude, codex, pool] = homes.map(({ dir }) => join(dir, "t3-pstack-models.md"));
+    writeFileSync(claude, SHEET);
+    const eperm = spyOn(fs, "symlinkSync").mockImplementation((_, path) => {
+      throw Object.assign(new Error(`EPERM: operation not permitted, symlink '${sheet}' -> '${path}'`), { code: "EPERM" });
+    });
+    try {
+      expect(moveSheet(sheet, homes)).toEqual([
+        `moved the sheet from ${claude}`,
+        `copied it to ${codex}, since this system refused a symlink`,
+        `copied it to ${pool}, since this system refused a symlink`,
+      ]);
+      for (const path of [sheet, claude, codex, pool]) expect([lstatSync(path).isSymbolicLink(), readFileSync(path, "utf8")]).toEqual([false, SHEET]);
+      expect(existsSync(join(root, ".claude-never-run"))).toBe(false);
+      expect(moveSheet(sheet, homes)).toEqual([]);
+      expect(doctorSheet(sheet, homes, { catalog: null, roles, tiers, hint: FIX })).toEqual([
+        { name: "machine sheet valid", ok: true, detail: "every line parses (pass --catalog to check targets)" },
+        { name: "home sheets", ok: true, detail: "none differ from it" },
+        {
+          name: "home sheet copies",
+          ok: false,
+          detail: `${claude}, ${codex}, ${pool} copy it and won't follow later edits to it`,
+          fix: `${FIX} to link each; on Windows, turn on Developer Mode first`,
+          warn: true,
+        },
+      ]);
+    } finally {
+      eperm.mockRestore();
+    }
+    expect(moveSheet(sheet, homes)).toEqual([`linked ${claude} to it`, `linked ${codex} to it`, `linked ${pool} to it`]);
+    expect(doctorSheet(sheet, homes, { catalog: null, roles, tiers, hint: FIX }).filter((c) => !c.ok)).toEqual([]);
+  });
+
   test("moves a sheet with its mode, and leaves a file beside it that only shares the old temp name", () => {
     const { root, homes, sheet } = machine();
     writeFileSync(join(root, ".claude/t3-pstack-models.md"), SHEET, { mode: 0o600 });
@@ -707,6 +768,13 @@ const linked = (home, user) => ({
   canonical: real(canonicalAt(user)),
 });
 
+// The hooks file agy reads from the copy, which runs its command in the copy
+// with `sh -c` on Unix and `cmd /c` on Windows.
+const agyHooks = (home) => JSON.parse(readFileSync(join(join(home.dir, "config/plugins/t3-pstack"), "hooks.json"), "utf8"));
+const agyHook = (command) => ({ "t3-pstack": { SessionStart: [{ type: "command", command }] } });
+const SH_HOOK = agyHook("sh ./hooks/session-start.sh antigravity");
+const POWERSHELL_HOOK = agyHook("powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./hooks/session-start.ps1 antigravity");
+
 describe("Antigravity", () => {
   test("installs one copy, links it where T3 lists skills and agy loads the plugin, and a second run changes nothing", () => {
     const user = tmp();
@@ -719,9 +787,10 @@ describe("Antigravity", () => {
       `linked ${join(home.dir, "config/plugins/t3-pstack")}`,
       `linked ${join(home.dir, "config/agents")}`,
     ]);
-    for (const file of ["hooks.json", ".antigravity-plugin/plugin.json", "hooks/session-start.sh", "skills/poteto-mode/SKILL.md"]) {
+    for (const file of [".antigravity-plugin/plugin.json", "hooks/session-start.sh", "hooks/session-start.ps1", "skills/poteto-mode/SKILL.md"]) {
       expect(readFileSync(join(canonicalAt(user), file))).toEqual(readFileSync(join(pluginRoot, file)));
     }
+    expect(agyHooks(home)).toEqual(process.platform === "win32" ? POWERSHELL_HOOK : SH_HOOK);
     const paths = linked(home, user);
     expect(paths).toEqual({
       skills: userSkillsAt(user),
@@ -920,6 +989,7 @@ describe("Antigravity", () => {
     installAntigravity(home, agy(user));
     const breakIt = [
       () => rmSync(join(canonicalAt(user), "hooks/session-start.sh")),
+      () => rmSync(join(canonicalAt(user), "hooks/session-start.ps1")),
       () => writeFileSync(join(canonicalAt(user), "hooks/session-start-context.md"), "changed\n"),
       () => rmSync(join(canonicalAt(user), "skills/setup-pstack/scripts/read-sheet.sh")),
       () => {
@@ -1029,6 +1099,54 @@ describe("Antigravity", () => {
     expect(existsSync(join(home.dir, "config/skills/how/SKILL.md"))).toBe(true);
   });
 
+  // The plugin's own root hooks.json is Devin's, which agy cannot read.
+  test("rewrites a hooks.json that is missing, Devin's, or another platform's", () => {
+    for (const damage of [
+      (path) => rmSync(path),
+      (path) => cpSync(join(pluginRoot, "hooks.json"), path),
+      (path) => writeFileSync(path, `${JSON.stringify(POWERSHELL_HOOK, null, 2)}\n`),
+    ]) {
+      const user = tmp();
+      const home = antigravityHome(user);
+      const linux = { ...agy(user), platform: "linux" };
+      installAntigravity(home, linux);
+      damage(join(canonicalAt(user), "hooks.json"));
+      expect(doctorAntigravity(home, linux)[0]).toMatchObject({ ok: false, detail: `${shipped}, but its files at ${canonicalAt(user)} are missing or changed` });
+      expect(installAntigravity(home, linux)).toEqual([`reinstalled ${shipped}, whose files were missing or changed`]);
+      expect(agyHooks(home)).toEqual(SH_HOOK);
+      expect(doctorAntigravity(home, linux)[0]).toEqual({ name: "installed", ok: true, detail: shipped });
+    }
+  });
+
+  // Antigravity runs a hook with `cmd /c` on Windows, where `sh` is missing.
+  test("on Windows, writes a hooks.json that runs the PowerShell hook, and a second run changes nothing", () => {
+    const user = tmp();
+    const home = antigravityHome(user);
+    const windows = { ...agy(user), platform: "win32" };
+    expect(installAntigravity(home, windows)[0]).toBe(`installed ${shipped}`);
+    expect(agyHooks(home)).toEqual(POWERSHELL_HOOK);
+    expect(installAntigravity(home, windows)).toEqual([]);
+    expect(doctorAntigravity(home, windows).every((row) => row.ok)).toBe(true);
+    expect(doctorAntigravity(home, { ...windows, platform: "linux" })[0]).toMatchObject({ ok: false });
+  });
+
+  // 2.5.0 to 2.7.2 copied the plugin's root hooks.json, which ran `sh` on every platform.
+  test.each([
+    ["linux", SH_HOOK],
+    ["win32", POWERSHELL_HOOK],
+  ])("updates a 2.5.0 to 2.7.2 copy on %s to this platform's hooks.json", (platform, hooks) => {
+    const user = tmp();
+    const home = antigravityHome(user);
+    const context = { ...agy(user), platform };
+    installAntigravity(home, context);
+    writeJson(join(canonicalAt(user), ".antigravity-plugin/plugin.json"), { name: "t3-pstack", version: "2.5.0" });
+    writeFileSync(join(canonicalAt(user), "hooks.json"), `${JSON.stringify(SH_HOOK, null, 2)}\n`);
+    expect(installAntigravity(home, context)).toEqual([`updated 2.5.0 to ${shipped}`]);
+    expect(agyHooks(home)).toEqual(hooks);
+    expect(installAntigravity(home, context)).toEqual([]);
+    expect(doctorAntigravity(home, context).every((c) => c.ok)).toBe(true);
+  });
+
   test("creates a profile T3 has not started yet, private as T3 keeps it", () => {
     const user = tmp();
     const home = { harness: "antigravity", dir: join(user, "providers/antigravity/abc"), from: [], bin: null };
@@ -1066,6 +1184,20 @@ describe("Antigravity", () => {
     expect(samePath("/a/b/", "/a/b")).toBe(true);
   });
 
+  test("doctor reads a profile config.json that PowerShell wrote with a UTF-8 byte-order mark", () => {
+    const user = tmp();
+    const home = antigravityHome(user);
+    const config = join(home.dir, "config/config.json");
+    writeFileSync(config, `\uFEFF${JSON.stringify({ plugins: { "t3-pstack": { enabled: false } } })}\n`);
+    installAntigravity(home, agy(user));
+    expect(doctorAntigravity(home, agy(user)).find((row) => row.name === "enabled")).toEqual({
+      name: "enabled",
+      ok: false,
+      detail: `no, ${config} turns it off`,
+      fix: 'turn t3-pstack on in that file\'s "plugins" map',
+    });
+  });
+
   test("the installer CLI installs into each Antigravity profile under HOME, with no claude or codex on PATH", () => {
     const user = tmp();
     const bin = join(user, "bin");
@@ -1093,6 +1225,7 @@ describe("Antigravity", () => {
     ]);
     expect(row(first).checks.every((c) => c.ok)).toBe(true);
     expect(realpathSync(join(profile, "config/skills/poteto-mode/SKILL.md"))).toBe(join(canonicalAt(user), "skills/poteto-mode/SKILL.md"));
+    expect(agyHooks({ dir: profile })).toEqual(SH_HOOK);
     expect(row(run("update")).steps).toEqual([]);
     expect(row(run("doctor")).checks.map((c) => c.name)).toEqual(["installed", "linked", "enabled", "T3 skills list"]);
     expect(existsSync(join(profile, "t3-pstack-models.md"))).toBe(false);
